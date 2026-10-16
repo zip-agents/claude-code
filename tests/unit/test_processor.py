@@ -79,7 +79,7 @@ def test_entry_names_are_sanitised() -> None:
 
 def test_filename_star_is_preferred() -> None:
     part = Part(
-        "form-data; name=\"files\"; filename=\"plain.txt\"; filename*=UTF-8''%E2%82%AC.txt",
+        'form-data; name="files"; filename="plain.txt"; filename*=UTF-8\'\'%E2%82%AC.txt',
         [b"euro"],
     )
     _, data = _run(body([part]))
@@ -105,6 +105,7 @@ def test_fields_after_first_file_are_ignored_with_warning(caplog: pytest.LogCapt
 
 def _error(payload: bytes, **kwargs: int) -> tuple[ProblemError, ArchiveProcessor]:
     processor = _processor(**kwargs)
+
     def feed_all() -> None:
         processor.feed(payload)
         processor.finish()
@@ -147,8 +148,7 @@ def test_filename_field_of_exactly_1024_bytes_is_measured_not_rejected() -> None
         body([file_part("a.txt", b"x")], close=False),  # no closing boundary
         b"",
         (
-            f"--{BOUNDARY}\r\nContent-Type: text/plain\r\n\r\nno disposition\r\n"
-            f"--{BOUNDARY}--\r\n"
+            f"--{BOUNDARY}\r\nContent-Type: text/plain\r\n\r\nno disposition\r\n--{BOUNDARY}--\r\n"
         ).encode(),
     ],
 )

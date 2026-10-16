@@ -171,8 +171,7 @@ def test_deduplicated_long_name_stays_within_limit() -> None:
 
 def test_content_disposition_matches_contract_example() -> None:
     assert content_disposition("quarterly report.zip") == (
-        "attachment; filename=\"quarterly report.zip\"; "
-        "filename*=UTF-8''quarterly%20report.zip"
+        "attachment; filename=\"quarterly report.zip\"; filename*=UTF-8''quarterly%20report.zip"
     )
 
 

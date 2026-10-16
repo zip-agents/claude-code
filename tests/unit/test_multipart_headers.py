@@ -53,7 +53,7 @@ def test_decode_ext_value(value: str, expected: str) -> None:
 
 def test_filename_star_is_preferred() -> None:
     disposition = parse_content_disposition(
-        "form-data; name=\"files\"; filename=\"fallback.txt\"; filename*=UTF-8''r%C3%A9el.txt"
+        'form-data; name="files"; filename="fallback.txt"; filename*=UTF-8\'\'r%C3%A9el.txt'
     )
     assert disposition == ContentDisposition(name="files", filename="r\u00e9el.txt")
 

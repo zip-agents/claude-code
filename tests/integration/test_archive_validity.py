@@ -113,8 +113,7 @@ def test_contract_example(server: ServerProcess, tmp_path: Path) -> None:
     )
     assert response.status_code == 200
     assert response.headers["content-disposition"] == (
-        "attachment; filename=\"quarterly report.zip\"; "
-        "filename*=UTF-8''quarterly%20report.zip"
+        "attachment; filename=\"quarterly report.zip\"; filename*=UTF-8''quarterly%20report.zip"
     )
     assert response.headers["cache-control"] == "no-store"
     assert response.headers["x-content-type-options"] == "nosniff"

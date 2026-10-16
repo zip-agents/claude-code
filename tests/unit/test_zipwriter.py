@@ -56,7 +56,7 @@ def test_every_central_entry_has_zip64_extra_and_correct_utf8_flag() -> None:
 
 def test_local_headers_carry_zip64_extra() -> None:
     data = _build([("a.txt", [b"abc"])], 6)
-    signature, version, flags = struct.unpack_from("<IHH", data)
+    signature, version = struct.unpack_from("<IH", data)
     assert signature == 0x04034B50
     assert version == 45
     compressed, uncompressed, name_len, extra_len = struct.unpack_from("<IIHH", data, 18)

@@ -140,7 +140,7 @@ def test_total_duration_timeout_before_streaming(make_server: ServerFactory) -> 
         client.send_head()
         started = time.monotonic()
         # Keep making progress (one byte at a time) so only the total duration can expire.
-        preamble = f"--{BOUNDARY}\r\nContent-Disposition: form-data; name=\"note\"\r\n\r\n"
+        preamble = f'--{BOUNDARY}\r\nContent-Disposition: form-data; name="note"\r\n\r\n'
         client.send_chunk(preamble.encode())
         for _ in range(40):
             client.send_chunk(b"x")

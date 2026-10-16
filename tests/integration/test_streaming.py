@@ -43,7 +43,7 @@ def test_half_duplex_client_succeeds_when_output_fits_in_buffer(
     with RawClient(server.port) as client:
         client.send_head()
         client.send_body(iter_body([file_part("text.txt", data)]))
-        status, headers, result = _read_zip_response(client, tmp_path / "half.zip")
+        status, _, result = _read_zip_response(client, tmp_path / "half.zip")
     assert status == 200
     assert result.complete
     with zipfile.ZipFile(tmp_path / "half.zip") as archive:
@@ -276,6 +276,4 @@ def test_fields_after_first_file_are_ignored_and_logged(
     assert status == 200
     assert result.complete
     assert 'filename="zipped_files.zip"' in headers["content-disposition"]
-    server.wait_for_log(
-        lambda r: r.get("request_id") == "late-field" and r["level"] == "WARNING"
-    )
+    server.wait_for_log(lambda r: r.get("request_id") == "late-field" and r["level"] == "WARNING")
