@@ -115,7 +115,8 @@ def start_server(workdir: Path, **settings: object) -> ServerProcess:
         stderr=subprocess.PIPE,
     )
     server = ServerProcess(process, port, workdir)
-    for stream, sink in ((process.stdout, server.stdout_lines), (process.stderr, server.stderr_lines)):
+    pumps = ((process.stdout, server.stdout_lines), (process.stderr, server.stderr_lines))
+    for stream, sink in pumps:
         threading.Thread(target=_pump, args=(stream, sink), daemon=True).start()
     deadline = time.monotonic() + 20
     while time.monotonic() < deadline:

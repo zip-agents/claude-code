@@ -18,7 +18,9 @@ def _processor(max_files: int = 500, level: int = 6) -> ArchiveProcessor:
     )
 
 
-def _run(payload: bytes, chunk_size: int | None = None, **kwargs: int) -> tuple[ArchiveProcessor, bytes]:
+def _run(
+    payload: bytes, chunk_size: int | None = None, **kwargs: int
+) -> tuple[ArchiveProcessor, bytes]:
     processor = _processor(**kwargs)
     out = bytearray()
     step = chunk_size or len(payload) or 1
@@ -103,9 +105,12 @@ def test_fields_after_first_file_are_ignored_with_warning(caplog: pytest.LogCapt
 
 def _error(payload: bytes, **kwargs: int) -> tuple[ProblemError, ArchiveProcessor]:
     processor = _processor(**kwargs)
-    with pytest.raises(ProblemError) as excinfo:
+    def feed_all() -> None:
         processor.feed(payload)
         processor.finish()
+
+    with pytest.raises(ProblemError) as excinfo:
+        feed_all()
     return excinfo.value, processor
 
 

@@ -1,5 +1,6 @@
 """Streaming, duplex, abort and concurrency behaviour against a real server (§4.1, §6.2)."""
 
+import contextlib
 import threading
 import time
 import zipfile
@@ -17,7 +18,7 @@ from tests.integration.support import (
     random_chunks,
     sha256_of,
 )
-from tests.multipart_builder import BOUNDARY, body, field_part, file_part, iter_body
+from tests.multipart_builder import BOUNDARY, Part, body, field_part, file_part, iter_body
 
 pytestmark = pytest.mark.slow
 
@@ -130,7 +131,7 @@ def _assert_truncated(client: RawClient, tmp_path: Path) -> None:
     ],
 )
 def test_mid_stream_failure_truncates_and_closes(
-    make_server: ServerFactory, tmp_path: Path, parts_tail: list, code: str
+    make_server: ServerFactory, tmp_path: Path, parts_tail: list[Part], code: str
 ) -> None:
     server = make_server(MAX_FILES=2)
     request_id = f"mid-{code}"
@@ -225,11 +226,9 @@ def test_disconnect_while_server_is_blocked_on_output(make_server: ServerFactory
     client.send_head(headers={"X-Request-ID": "blocked-disconnect"})
     chunks = iter_body([file_part("r.bin", random_chunks(256 * MIB, seed=5))])
     client.sock.settimeout(2)
-    try:
+    with contextlib.suppress(TimeoutError):
         for chunk in chunks:  # until the server stops reading and our send blocks
             client.send_chunk(chunk)
-    except TimeoutError:
-        pass
     client.close()
     record = server.completion_for("blocked-disconnect", timeout=10)
     assert record["outcome"] == "client_disconnected"
@@ -266,7 +265,9 @@ def test_health_stays_responsive_during_heavy_compression(
     assert max(latencies) < 0.5, latencies
 
 
-def test_fields_after_first_file_are_ignored_and_logged(server: ServerProcess, tmp_path: Path) -> None:
+def test_fields_after_first_file_are_ignored_and_logged(
+    server: ServerProcess, tmp_path: Path
+) -> None:
     payload = body([file_part("a.txt", b"a"), field_part("filename", "late")])
     with RawClient(server.port) as client:
         client.send_head(headers={"X-Request-ID": "late-field"})

@@ -5,6 +5,7 @@ streaming. It wraps the whole FastAPI app, including Starlette's ServerErrorMidd
 so even framework-generated 500 responses carry X-Request-ID.
 """
 
+import contextlib
 import logging
 import re
 import time
@@ -84,10 +85,8 @@ class RequestContextMiddleware:
             stats.code = "internal-error"
             if not response_started:
                 stats.status = 500
-                try:
+                with contextlib.suppress(OSError):
                     await problem_response("internal-error")(scope, receive, send_with_context)
-                except OSError:
-                    pass
         finally:
             if scope["method"] == "POST" and scope["path"] == ZIP_PATH:
                 self._log_completion(scope, stats, started)

@@ -35,8 +35,10 @@ EXPECTED_NAMES = [
 
 def _fetch_archive(server: ServerProcess, tmp_path: Path) -> Path:
     payload = body(
-        [field_part("filename", "validity test")]
-        + [file_part(name, data) for name, data in UPLOADS]
+        [
+            field_part("filename", "validity test"),
+            *(file_part(name, data) for name, data in UPLOADS),
+        ]
     )
     response = httpx.post(
         f"{server.url}/api/v1/zip",
@@ -57,7 +59,9 @@ def _fetch_archive(server: ServerProcess, tmp_path: Path) -> Path:
 
 
 @pytest.fixture(params=[0, 6], ids=["stored", "deflate"])
-def archive_path(request: pytest.FixtureRequest, make_server: ServerFactory, tmp_path: Path) -> Path:
+def archive_path(
+    request: pytest.FixtureRequest, make_server: ServerFactory, tmp_path: Path
+) -> Path:
     server = make_server(ZIP_COMPRESSION_LEVEL=request.param)
     return _fetch_archive(server, tmp_path)
 

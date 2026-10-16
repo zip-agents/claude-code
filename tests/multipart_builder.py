@@ -32,7 +32,9 @@ def field_part(name: str, value: str | bytes) -> Part:
     return Part(f'form-data; name="{name}"', [raw])
 
 
-def iter_body(parts: Iterable[Part], boundary: str = BOUNDARY, close: bool = True) -> Iterator[bytes]:
+def iter_body(
+    parts: Iterable[Part], boundary: str = BOUNDARY, close: bool = True
+) -> Iterator[bytes]:
     for part in parts:
         yield part.head(boundary)
         yield from part.data

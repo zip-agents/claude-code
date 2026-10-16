@@ -29,11 +29,13 @@ def _assert_problem(response: httpx.Response, status: int, code: str) -> None:
     assert problem["detail"]
 
 
-def _post(server: ServerProcess, payload: bytes, content_type: str = CONTENT_TYPE, **kw: str) -> httpx.Response:
+def _post(
+    server: ServerProcess, payload: bytes, content_type: str = CONTENT_TYPE
+) -> httpx.Response:
     return httpx.post(
         f"{server.url}/api/v1/zip",
         content=payload,
-        headers={"content-type": content_type, **kw},
+        headers={"content-type": content_type},
         timeout=30,
     )
 
@@ -48,7 +50,12 @@ def _post(server: ServerProcess, payload: bytes, content_type: str = CONTENT_TYP
         (CONTENT_TYPE, body([field_part("note", "x")], close=False), 400, "malformed-request"),
         (CONTENT_TYPE, body([field_part("note", "hi")]), 400, "no-files"),
         (CONTENT_TYPE, body([file_part("", b"")]), 400, "no-files"),
-        (CONTENT_TYPE, body([file_part("a.txt", b"x", name="upload")]), 400, "unexpected-file-field"),
+        (
+            CONTENT_TYPE,
+            body([file_part("a.txt", b"x", name="upload")]),
+            400,
+            "unexpected-file-field",
+        ),
         (
             CONTENT_TYPE,
             body([field_part("filename", "a"), field_part("filename", "b"), file_part("f", b"")]),
