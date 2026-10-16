@@ -139,17 +139,19 @@ def test_total_duration_timeout_before_streaming(make_server: ServerFactory) -> 
     with RawClient(server.port) as client:
         client.send_head()
         started = time.monotonic()
-        # Keep making progress (one byte at a time) so only the total duration can expire.
+        # Make steady progress for 1.5 s, then go quiet but stay well inside the 10 s idle
+        # timeout: only the 2 s total duration can expire. Stop sending before the deadline,
+        # since writing to the closed connection would reset it and lose the response.
         preamble = f'--{BOUNDARY}\r\nContent-Disposition: form-data; name="note"\r\n\r\n'
         client.send_chunk(preamble.encode())
-        for _ in range(40):
+        while time.monotonic() - started < 1.5:
             client.send_chunk(b"x")
             time.sleep(0.1)
-            if time.monotonic() - started > 2.5:
-                break
         status, _, problem = client.read_problem()
+        elapsed = time.monotonic() - started
     assert status == 408
     assert problem["code"] == "request-timeout"
+    assert 1.5 <= elapsed < 5
 
 
 def test_too_many_files_is_never_reachable_before_streaming(make_server: ServerFactory) -> None:
