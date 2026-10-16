@@ -1,4 +1,4 @@
-"""Entry point: `python -m zip_service`."""
+"""Entry point: `python main.py` (also the container command)."""
 
 import sys
 
@@ -6,9 +6,9 @@ import uvicorn
 
 from zip_service.app import create_app
 from zip_service.config import ConfigError, load_settings
-from zip_service.lifecycle import InflightTracker
-from zip_service.logs import configure_logging
-from zip_service.server import ClosableHttpToolsProtocol, GracefulServer
+from zip_service.server.lifecycle import InflightTracker
+from zip_service.server.logging import configure_logging
+from zip_service.server.server import ClosableHttpToolsProtocol, GracefulServer
 
 
 def main() -> int:

@@ -1,6 +1,6 @@
 import pytest
 
-from zip_service.multipart import (
+from zip_service.archive.multipart import (
     ContentDisposition,
     ContentTypeError,
     decode_ext_value,

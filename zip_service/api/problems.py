@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 from fastapi.responses import JSONResponse
 
-from zip_service.context import request_id_var
+from zip_service.server.context import request_id_var
 
 PROBLEM_MEDIA_TYPE = "application/problem+json"
 RETRY_AFTER_SECONDS = "5"

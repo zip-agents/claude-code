@@ -6,7 +6,7 @@ import sys
 from datetime import UTC, datetime
 from typing import Any
 
-from zip_service.context import request_id_var
+from zip_service.server.context import request_id_var
 
 # uvicorn logs this when an ASGI app returns after starting but not finishing a response.
 # That is exactly how a mid-stream abort closes the connection, and the pipeline already

@@ -2,7 +2,7 @@ import unicodedata
 
 import pytest
 
-from zip_service.names import (
+from zip_service.archive.naming import (
     EntryNameDeduplicator,
     InvalidArchiveNameError,
     archive_name,

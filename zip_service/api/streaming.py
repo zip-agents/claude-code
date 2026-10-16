@@ -24,12 +24,12 @@ from typing import Any
 from starlette.responses import Response
 from starlette.types import Message, Receive, Scope, Send
 
+from zip_service.api.problems import ProblemError, problem_response
+from zip_service.archive.naming import content_disposition
+from zip_service.archive.processor import ArchiveProcessor
 from zip_service.config import Settings
-from zip_service.context import CLOSE_CONNECTION_EXTENSION, RequestStats
-from zip_service.lifecycle import InflightTracker
-from zip_service.names import content_disposition
-from zip_service.problems import ProblemError, problem_response
-from zip_service.processor import ArchiveProcessor
+from zip_service.server.context import CLOSE_CONNECTION_EXTENSION, RequestStats
+from zip_service.server.lifecycle import InflightTracker
 
 logger = logging.getLogger(__name__)
 

@@ -2,8 +2,8 @@ import json
 import logging
 import re
 
-from zip_service.context import request_id_var
-from zip_service.logs import JsonFormatter
+from zip_service.server.context import request_id_var
+from zip_service.server.logging import JsonFormatter
 
 
 def _record(message: str, **extra: object) -> logging.LogRecord:

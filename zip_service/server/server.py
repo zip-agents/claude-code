@@ -15,8 +15,8 @@ from typing import Any, cast
 import uvicorn
 from uvicorn.protocols.http.httptools_impl import HttpToolsProtocol
 
-from zip_service.context import CLOSE_CONNECTION_EXTENSION
-from zip_service.lifecycle import InflightTracker
+from zip_service.server.context import CLOSE_CONNECTION_EXTENSION
+from zip_service.server.lifecycle import InflightTracker
 
 logger = logging.getLogger(__name__)
 

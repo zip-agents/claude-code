@@ -6,8 +6,8 @@ from datetime import UTC, datetime
 import pytest
 
 from tests.multipart_builder import BOUNDARY, Part, body, field_part, file_part
-from zip_service.problems import ProblemError
-from zip_service.processor import ArchiveProcessor
+from zip_service.api.problems import ProblemError
+from zip_service.archive.processor import ArchiveProcessor
 
 NOW = datetime(2025, 1, 2, 3, 4, 6, tzinfo=UTC)
 

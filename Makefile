@@ -58,7 +58,7 @@ run: image ## Run the production image with settings from .env
 run-dev: dev-image ## Run the service from source with settings from .env
 	$(ENGINE) run --rm -it -v "$(CURDIR)":/workspace -v zip-service-dev:/opt/dev \
 		--env-file .env -p $(PORT):$(PORT) \
-		$(DEV_IMAGE) uv run --locked python -m zip_service
+		$(DEV_IMAGE) uv run --locked python main.py
 
 shell: dev-image ## Interactive shell in the dev container
 	$(ENGINE) run --rm -it -v "$(CURDIR)":/workspace -v zip-service-dev:/opt/dev \

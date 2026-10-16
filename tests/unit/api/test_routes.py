@@ -9,10 +9,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from tests.multipart_builder import CONTENT_TYPE, body, field_part, file_part
-from zip_service import app as app_module
+from zip_service.api.v1 import zip as zip_module
 from zip_service.app import create_app
 from zip_service.config import Settings
-from zip_service.lifecycle import InflightTracker
+from zip_service.server.lifecycle import InflightTracker
 
 ZIP_URL = "/api/v1/zip"
 
@@ -127,7 +127,7 @@ def test_internal_error_is_a_problem_without_details(
     def explode(_: str | None) -> bytes:
         raise RuntimeError("secret internal detail")
 
-    monkeypatch.setattr(app_module, "multipart_boundary", explode)
+    monkeypatch.setattr(zip_module, "multipart_boundary", explode)
     response = client.post(ZIP_URL, content=b"", headers={"content-type": CONTENT_TYPE})
     problem = _assert_problem(response, 500, "internal-error")
     assert "secret" not in response.text

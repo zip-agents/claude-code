@@ -13,12 +13,12 @@ import uuid
 
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from zip_service.context import RequestStats, request_id_var, stats_var
-from zip_service.problems import problem_response
+from zip_service.api.problems import problem_response
+from zip_service.api.v1.zip import ZIP_PATH
+from zip_service.server.context import RequestStats, request_id_var, stats_var
 
 logger = logging.getLogger("zip_service.access")
 
-ZIP_PATH = "/api/v1/zip"
 REQUEST_ID_HEADER = b"x-request-id"
 _VALID_REQUEST_ID = re.compile(r"[A-Za-z0-9._-]{1,128}")
 

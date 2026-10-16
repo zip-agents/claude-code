@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from zip_service.zipwriter import ZipStreamWriter
+from zip_service.archive.zipwriter import ZipStreamWriter
 
 MODIFIED = datetime(2024, 5, 17, 13, 45, 31, tzinfo=UTC)
 

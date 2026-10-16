@@ -29,19 +29,30 @@ uses `--locked` and fails on a stale lockfile.
 ## Architecture in one minute
 
 ```
-middleware.py   RequestContextMiddleware (outermost ASGI): request ID, last-resort 500,
-                one completion log line per POST /api/v1/zip
-app.py          FastAPI routes + exception handlers → problems.py (RFC 9457 bodies)
-pipeline.py     ZipPipeline (an ASGI Response): reader / writer / watchdog tasks around
-                a bounded OutputBuffer; decides problem response vs mid-stream abort
-processor.py    ArchiveProcessor: sync, pure — multipart callbacks → zip bytes
-zipwriter.py    ZipStreamWriter: sync, pure — Zip64 local headers, descriptors, central dir
-names.py        archive/entry name rules, de-duplication, Content-Disposition
-multipart.py    header parameter parsing (Content-Type, Content-Disposition, filename*)
-lifecycle.py    InflightTracker: concurrency counter, shutdown flag, abort-all
-server.py       GracefulServer (SIGTERM drain), ClosableHttpToolsProtocol (forced close)
-config.py       Settings (pydantic-settings), logs.py JSON formatter, context.py contextvars
+main.py                     entrypoint: load config, configure logging, run GracefulServer
+zip_service/app.py          create_app(): include routers, exception handlers → problem+json,
+                            wrap in RequestContextMiddleware
+zip_service/config.py       Settings (pydantic-settings)
+zip_service/api/            HTTP surface; route files mirror URLs
+  health.py                 /health/live, /health/ready
+  v1/zip.py                 POST /api/v1/zip: shutdown/overload/content-type checks, slot
+  streaming.py              ZipPipeline (an ASGI Response): reader / writer / watchdog tasks
+                            around a bounded OutputBuffer; problem response vs abort
+  middleware.py             outermost ASGI: request ID, last-resort 500, completion log line
+  problems.py               ProblemError, PROBLEMS table (code → status/title/detail)
+zip_service/archive/        synchronous, no I/O
+  processor.py              ArchiveProcessor: multipart callbacks → zip bytes
+  zipwriter.py              ZipStreamWriter: Zip64 local headers, descriptors, central dir
+  naming.py                 archive/entry name rules, de-duplication, Content-Disposition
+  multipart.py              header parameter parsing (Content-Type, Content-Disposition)
+zip_service/server/         process runtime
+  server.py                 GracefulServer (SIGTERM drain), ClosableHttpToolsProtocol
+  lifecycle.py              InflightTracker: concurrency counter, shutdown flag, abort-all
+  logging.py, context.py    JSON formatter; request ID / stats contextvars
 ```
+
+New endpoints go in `zip_service/api/<version>/<resource>.py` as a router factory,
+included in `create_app`.
 
 Data flow: `receive()` → `asyncio.to_thread(processor.feed)` → `OutputBuffer.put` →
 writer `send()`. Headers are sent by the reader when `processor.streaming` first becomes
@@ -72,7 +83,7 @@ true.
    `application/problem+json`** with a `code` from `problems.PROBLEMS`. Add new codes
    there, never inline. *Why:* the conformance suite checks both.
 8. **stdout carries only JSON log lines.** Use `logging`, never `print` (except
-   config errors to stderr in `__main__`). *Why:* log ingestion and §10.
+   config errors to stderr in `main.py`). *Why:* log ingestion and §10.
 9. **Exactly one completion log line per zip request**, emitted by the middleware from
    `RequestStats`. Set `outcome`, `code` and `status` on the stats; don't log a second
    summary. *Why:* §10.
@@ -88,8 +99,8 @@ true.
 ## Verifying a change
 
 1. `make lint`
-2. `make test`, then `make test-slow`. Any change to `pipeline.py`,
-   `server.py`, `middleware.py` or `zipwriter.py` **must** pass the slow suite.
+2. `make test`, then `make test-slow`. Any change under `api/` or
+   `server/`, or to `archive/zipwriter.py`, **must** pass the slow suite.
 3. Container-related changes: `make smoke`.
 4. For behaviour changes, check the contract section first, then add a test at the lowest
    level that can express it. Use a pure unit test for rules. Use an integration test
@@ -99,7 +110,7 @@ true.
 
 ## Conventions
 
-- Python 3.12, fully typed (`mypy --strict` on `src/`), ruff for formatting (line length 100).
+- Python 3.12, fully typed (`mypy --strict`), ruff for formatting (line length 100).
 - Keep pure logic (names, parsing, zip format) free of I/O and asyncio so it is
   unit-testable. Keep the async layer thin.
 - Raise `ProblemError(code, detail)` for contract errors. `detail` is user-facing: never

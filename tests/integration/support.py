@@ -34,6 +34,7 @@ SETTING_NAMES = {
     "OUTPUT_BUFFER_MAX_BYTES",
 }
 MIB = 1024 * 1024
+MAIN_SCRIPT = Path(__file__).resolve().parents[2] / "main.py"
 
 
 def free_port() -> int:
@@ -101,14 +102,14 @@ def _pump(stream: Any, sink: list[str]) -> None:
 
 
 def start_server(workdir: Path, **settings: object) -> ServerProcess:
-    """Start `python -m zip_service` in `workdir` (also its TMPDIR) and wait until live."""
+    """Start `python main.py` with `workdir` as cwd and TMPDIR, and wait until live."""
     port = free_port()
     workdir.mkdir(parents=True, exist_ok=True)
     env = {key: value for key, value in os.environ.items() if key not in SETTING_NAMES}
     env.update({"PORT": str(port), "TMPDIR": str(workdir), "PYTHONUNBUFFERED": "1"})
     env.update({key.upper(): str(value) for key, value in settings.items()})
     process = subprocess.Popen(
-        [sys.executable, "-m", "zip_service"],
+        [sys.executable, str(MAIN_SCRIPT)],
         cwd=workdir,
         env=env,
         stdout=subprocess.PIPE,

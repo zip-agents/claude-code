@@ -1,6 +1,6 @@
 import asyncio
 
-from zip_service.pipeline import OutputBuffer
+from zip_service.api.streaming import OutputBuffer
 
 
 def test_put_blocks_when_full_and_resumes_after_get() -> None:

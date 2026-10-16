@@ -103,3 +103,14 @@ docker build -t zip-service .
   - `scripts/smoke_test.sh` runs its HTTP and archive checks from the dev image, attached
     to the service container's network, so the host needs only Docker.
   - `.env` is created from `.env.example` and is git-ignored.
+- **Layout aimed at an API, not a library** (agreed in review):
+  - `main.py` at the repo root is the entrypoint (`python main.py`, also the Docker CMD).
+  - `zip_service/api/` mirrors the URLs (`health.py`, `v1/zip.py`) and holds streaming,
+    middleware and problems.
+  - `zip_service/archive/` holds the synchronous logic (processor, multipart, naming,
+    zipwriter).
+  - `zip_service/server/` holds the process runtime (server, lifecycle, logging, context).
+  - No build system (`[tool.uv] package = false`); the image copies the code next to a
+    locked virtualenv.
+  - Deliberately not done: a separate domain error type and import-boundary enforcement.
+    Not needed while this is only an API.

@@ -1,4 +1,4 @@
-# Only pyproject.toml, uv.lock and src/ are needed to build the image.
+# Only pyproject.toml, uv.lock, main.py and zip_service/ are needed to build the image.
 .env
 .env.*
 .git

@@ -13,15 +13,15 @@ from typing import Any, cast
 from python_multipart.exceptions import MultipartParseError
 from python_multipart.multipart import MultipartParser
 
-from zip_service.multipart import decode_header_bytes, parse_content_disposition
-from zip_service.names import (
+from zip_service.api.problems import ProblemError
+from zip_service.archive.multipart import decode_header_bytes, parse_content_disposition
+from zip_service.archive.naming import (
     EntryNameDeduplicator,
     InvalidArchiveNameError,
     archive_name,
     sanitize_entry_name,
 )
-from zip_service.problems import ProblemError
-from zip_service.zipwriter import ZipStreamWriter
+from zip_service.archive.zipwriter import ZipStreamWriter
 
 logger = logging.getLogger(__name__)
 

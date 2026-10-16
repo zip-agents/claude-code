@@ -121,18 +121,39 @@ toward the concurrency limit.
             └───────────────────────────────────────────────────────────┘
 ```
 
-| Module | Responsibility |
-|---|---|
-| `processor.py` | **Synchronous, pure.** Feeds body bytes to python-multipart's callback parser, enforces the part rules (§2.2) and returns the zip bytes they produce. |
-| `zipwriter.py` | **Pure.** A push-based Zip64 writer: each call returns the bytes to emit. |
-| `names.py`, `multipart.py` | **Pure.** Archive/entry name rules, header-parameter parsing, `Content-Disposition` encoding. |
-| `pipeline.py` | **Async I/O.** The ASGI response for the zip endpoint: the reader, writer and watchdog tasks, the output buffer, when headers go out and how failures are handled. |
-| `middleware.py` | Request IDs, the last-resort 500, and one completion log line per zip request. |
-| `lifecycle.py`, `server.py` | Concurrency counter, graceful shutdown, and the uvicorn customisations. |
-| `app.py`, `config.py`, `logs.py`, `problems.py` | Wiring, settings, JSON logging, problem details. |
+The layout follows the API. `main.py` at the repository root is the entrypoint, and
+routes live in files that mirror their URLs.
 
-Everything that can be pure is pure, so the rules are unit-tested exhaustively without
-a server. The async layer is thin and tested against a real process.
+```
+main.py                    entrypoint: config → logging → server (python main.py)
+zip_service/
+  app.py                   create_app(): routers, error handlers, outer middleware
+  config.py                settings
+  api/                     the HTTP surface
+    health.py              GET /health/live, GET /health/ready
+    v1/zip.py              POST /api/v1/zip: admission checks, hands off to streaming
+    streaming.py           ZipPipeline + OutputBuffer: reader/writer/watchdog tasks,
+                           when headers go out, problem response vs mid-stream abort
+    middleware.py          request IDs, last-resort 500, one completion log line
+    problems.py            problem+json responses and the code → status table
+  archive/                 synchronous, no I/O
+    processor.py           multipart bytes → zip bytes, enforces the part rules (§2.2)
+    multipart.py           header-parameter parsing (Content-Type, Content-Disposition)
+    naming.py              archive/entry name rules, de-duplication, Content-Disposition
+    zipwriter.py           push-based Zip64 writer: each call returns the bytes to emit
+  server/                  the process
+    server.py              GracefulServer (SIGTERM drain), ClosableHttpToolsProtocol
+    lifecycle.py           concurrency counter, shutdown flag
+    logging.py             JSON-lines formatter
+    context.py             request ID and per-request stats contextvars
+```
+
+The rules live in `archive/` as plain synchronous code, so they are unit-tested
+exhaustively without a server. The async layer is thin and tested against a real process.
+
+There is no build step: `pyproject.toml` declares dependencies with
+`[tool.uv] package = false`, and the image copies `main.py` and `zip_service/` next to a
+locked virtualenv. The artifact is the Docker image, and `make smoke` tests it.
 
 ### Streaming
 
@@ -327,7 +348,7 @@ less than the buffer plus 40 MiB.
 | Suite | Command | What it covers |
 |---|---|---|
 | Fast | `uv run pytest` | Name rules, sanitisation and de-duplication, `Content-Disposition`, header parsing, configuration validation, the Zip64 writer (round-tripped through `zipfile`, extras and flags inspected), the processor fed in many chunkings (1 byte to whole body) including every error, output-buffer backpressure, and in-process routing and error handling (`TestClient`). |
-| Slow | `uv run pytest -m slow` | A real `python -m zip_service` subprocess, driven by `httpx` and a raw-socket HTTP/1.1 client. Covers archive validity with `zipfile`, `unzip -t` and `7z t` with contents compared byte for byte, bounded RSS during a large upload, no disk writes, half-duplex success, full-duplex success at 128× the buffer, stalled clients aborted, every reachable §6.1 code, mid-stream truncation without the terminating chunk, disconnects releasing the concurrency slot, `503 overloaded`, health latency under load, and SIGTERM draining and aborting. |
+| Slow | `uv run pytest -m slow` | A real `python main.py` subprocess, driven by `httpx` and a raw-socket HTTP/1.1 client. Covers archive validity with `zipfile`, `unzip -t` and `7z t` with contents compared byte for byte, bounded RSS during a large upload, no disk writes, half-duplex success, full-duplex success at 128× the buffer, stalled clients aborted, every reachable §6.1 code, mid-stream truncation without the terminating chunk, disconnects releasing the concurrency slot, `503 overloaded`, health latency under load, and SIGTERM draining and aborting. |
 | Container | `scripts/smoke_test.sh` | The built image, hardened (see above). |
 
 **Archive tools tested against:** Python `zipfile` (3.12), Info-ZIP UnZip 6.00 and the
