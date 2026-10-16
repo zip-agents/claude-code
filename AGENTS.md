@@ -37,6 +37,8 @@ zip_service/app.py          create_app(): include routers, exception handlers �
 zip_service/config.py       Settings (pydantic-settings)
 zip_service/api/            HTTP surface; route files mirror URLs
   health.py                 /health/live, /health/ready
+  docs.py                   /docs/manifest.json, /docs/*.md (contract §14): fixed allow-list,
+                            loaded at startup by main.py, served from memory
   v1/zip.py                 POST /api/v1/zip: shutdown/overload/content-type checks, slot
   streaming.py              ZipPipeline (an ASGI Response): reader / writer / watchdog tasks
                             around a bounded OutputBuffer; problem response vs abort
@@ -97,6 +99,10 @@ true.
     `zipfile`, which is lenient. *Why:* §2.5 and §6.2.
 12. **The image stays non-root, read-only-compatible and offline-capable.** Don't write
     to the filesystem at runtime, and don't fetch anything at startup. *Why:* §11.
+13. **`/docs` serves only the files in `DOCUMENTS`, read at startup.** Never build a
+    filesystem path from a request, and keep `README.md` and `AGENTS.md` in the image
+    (`Dockerfile`, `.dockerignore` exceptions). *Why:* §14, and path traversal must be
+    impossible by construction.
 
 ## Verifying a change
 
@@ -104,6 +110,7 @@ true.
 2. `make test`, then `make test-slow`. Any change under `api/` or
    `server/`, or to the zip output in `archive/processor.py`, **must** pass the slow suite.
 3. Container-related changes: `make smoke`.
+   This includes changes to which documents are served.
 4. For behaviour changes, check the contract section first, then add a test at the lowest
    level that can express it. Use a pure unit test for rules. Use an integration test
    only for I/O behaviour: timing, sockets, process lifecycle.
@@ -124,6 +131,11 @@ true.
   modules set `pytestmark = pytest.mark.slow` and use the `server`/`make_server` fixtures.
   Build bodies with `tests/multipart_builder.py`, and use `RawClient` when you need control
   over socket reads and writes.
+- `README.md` and `AGENTS.md` are published through `/docs` to the gateway's portal.
+  Keep them accurate when behaviour changes. Use plain Markdown (no raw HTML), and refer
+  to other documents by name rather than by relative link.
+- Version: bump `version` in `pyproject.toml` and `zip_service.__version__` together (a
+  test checks they match), then `make lock`.
 - Commits: small, one logical change each, imperative subject line, tests passing.
 - Configuration: add new settings to `config.Settings`, `.env.example` (a test enforces
   this), the README table, and the integration `SETTING_NAMES` set.

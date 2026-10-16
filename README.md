@@ -62,7 +62,7 @@ slow suite instead of skipping it.
 ### Container
 
 ```bash
-make image               # docker build -t zip-service:local .
+make image               # docker build --build-arg GIT_SHA=<HEAD> -t zip-service:local .
 make smoke               # build, then smoke-test the image hardened
 docker run --rm -p 8000:8000 --read-only --cap-drop ALL zip-service:local
 ```
@@ -71,7 +71,9 @@ The smoke test runs the image the way production should: read-only root filesyst
 capabilities, `no-new-privileges`. It checks the contract example end to end (`unzip -t`,
 `7z t`, byte for byte), headers, health checks, JSON logs, `PORT`, operation with
 `--network none`, the `HEALTHCHECK`, exit code 0 after SIGTERM, and that invalid
-configuration exits non-zero. Its HTTP and archive checks run in the dev image, attached
+configuration exits non-zero. It also checks that `/docs` serves `README.md` and
+`AGENTS.md` byte for byte, with the expected revision in the manifest. Its HTTP and
+archive checks run in the dev image, attached
 to the service container's network, so the host needs no tools besides Docker.
 
 ### Configuration
@@ -110,6 +112,13 @@ carries `Content-Disposition` (an ASCII fallback plus an RFC 8187 `filename*`),
 `GET /health/live` returns 200 whenever the process is running. `GET /health/ready`
 returns 200, or 503 while the service is shutting down. Health endpoints don't count
 toward the concurrency limit.
+
+`GET /docs/manifest.json` and `GET /docs/README.md` and `/docs/AGENTS.md` serve this
+service's own documentation (contract 1.1.0 §14), so that the API gateway can publish it
+in its docs portal. The manifest reports the service version, the git commit the image was
+built from (`revision`) and the contract version. Like health checks, these endpoints
+don't count toward the concurrency limit. Because of this, this README is also read in
+the gateway's portal, where relative links and the table of contents don't work.
 
 ## Design
 
@@ -341,13 +350,24 @@ less than the buffer plus 40 MiB.
   the connection is reset.
 - **Unknown HTTP errors** from the framework (none are known to occur) keep their status
   and use the `internal-error` problem body.
-- **`/docs` and `/openapi.json` are disabled.** The contract defines every other path as
-  404. Re-enable them in `create_app` if wanted.
+- **FastAPI's `/docs` UI, `/redoc` and `/openapi.json` stay disabled.** `/docs/*` is
+  contract §14 instead. The API gateway hosts the API reference, and a generated
+  OpenAPI document would say little, because the zip route reads the raw request stream.
+- **Docs are loaded once, at startup,** from a fixed allow-list (`DOCUMENTS` in
+  `api/docs.py`) and served from memory. A missing or oversized document makes the
+  process exit with status 2, like invalid configuration, so a broken image never
+  becomes ready. Request paths never touch the filesystem.
+- **`revision`** comes from the optional `GIT_SHA` build argument, set as an environment
+  variable in the image; it is `"unknown"` for a plain `docker build .`. `version` is
+  the service's own version (`pyproject.toml`, mirrored in `zip_service.__version__`),
+  independent of the contract version.
+- **Docs endpoints keep working during shutdown.** Only zip requests are refused.
 - **One process per container.** `MAX_CONCURRENT_REQUESTS` applies per process, and you
   scale horizontally with replicas. No worker processes.
 - **`SHUTDOWN_GRACE_SECONDS`** may be `0` (abort in-flight requests immediately). `PORT`
   must be 1–65535.
-- **Exit status** is 0 after a graceful shutdown and 2 on invalid configuration.
+- **Exit status** is 0 after a graceful shutdown and 2 on invalid configuration or a
+  missing document.
 
 ## Testing
 
