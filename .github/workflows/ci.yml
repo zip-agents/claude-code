@@ -86,6 +86,8 @@ jobs:
           tags: zip-service:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - name: Build the probe (dev) image used by the smoke test
+        run: make dev-image
       - name: Smoke-test the image
         run: ./scripts/smoke_test.sh zip-service:ci
       - name: Image metadata

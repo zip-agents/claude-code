@@ -15,3 +15,5 @@ scripts
 *.pdf
 Dockerfile
 .dockerignore
+Dockerfile.dev
+Makefile

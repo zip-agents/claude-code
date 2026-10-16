@@ -21,13 +21,14 @@ down here.
 
 ## Running it
 
-Requirements: Python 3.12 and [uv](https://docs.astral.sh/uv/). The integration tests
-also need `unzip` and `7z` (Debian/Ubuntu: `apt install unzip p7zip-full`).
+Everything runs in containers. The host needs only Docker (or `ENGINE=podman`) and
+`make`. `make help` lists the targets.
 
 ```bash
-uv sync                                    # create .venv with runtime + dev dependencies
-uv run python -m zip_service               # listens on 0.0.0.0:8000
-cp .env.example .env                       # optional: local overrides, never committed
+cp .env.example .env     # local settings for `make run` / `make run-dev`; never committed
+make lock                # resolve dependencies into uv.lock (commit it)
+make run-dev             # run from source in the dev container on $PORT (default 8000)
+make run                 # build and run the production image with .env
 ```
 
 ```bash
@@ -37,27 +38,39 @@ curl -sS -o out.zip -D - \
   http://localhost:8000/api/v1/zip
 ```
 
+`Dockerfile.dev` is the toolbox image: Python 3.12, uv, `unzip`, `7z` and `curl`. It is
+built with your UID/GID, so files written to the bind-mounted repository stay yours. The
+virtualenv and uv cache live in named volumes (`make clean` removes them). Without
+Docker, the same commands work directly with uv (`uv sync`, `uv run pytest`, ...).
+
 ### Tests and checks
 
 ```bash
-uv run pytest                              # fast: unit + in-process tests (~seconds)
-uv run pytest -m slow                      # slow: integration tests against a real server
-REQUIRE_ZIP_TOOLS=1 uv run pytest -m slow  # as CI runs them: missing unzip/7z fails
-uv run ruff check . && uv run ruff format --check . && uv run mypy
+make test                # fast: unit + in-process tests (~seconds)
+make test-slow           # slow: integration tests against a real server process
+make lint                # ruff check, ruff format --check, mypy --strict
+make format              # apply ruff formatting and safe fixes
+make check               # lint + all tests: what CI runs before building the image
+make test ARGS='-k names -x'   # pass extra pytest arguments
 ```
+
+The dev container sets `REQUIRE_ZIP_TOOLS=1`, so a missing `unzip` or `7z` fails the
+slow suite instead of skipping it.
 
 ### Container
 
 ```bash
-docker build -t zip-service:local .
+make image               # docker build -t zip-service:local .
+make smoke               # build, then smoke-test the image hardened
 docker run --rm -p 8000:8000 --read-only --cap-drop ALL zip-service:local
-./scripts/smoke_test.sh zip-service:local  # ENGINE=podman to use Podman
 ```
 
 The smoke test runs the image the way production should: read-only root filesystem, no
-capabilities, `no-new-privileges`. It checks the contract example end to end, headers,
-health checks, JSON logs, `PORT`, operation with `--network none`, the `HEALTHCHECK`,
-exit code 0 after SIGTERM, and that invalid configuration exits non-zero.
+capabilities, `no-new-privileges`. It checks the contract example end to end (`unzip -t`,
+`7z t`, byte for byte), headers, health checks, JSON logs, `PORT`, operation with
+`--network none`, the `HEALTHCHECK`, exit code 0 after SIGTERM, and that invalid
+configuration exits non-zero. Its HTTP and archive checks run in the dev image, attached
+to the service container's network, so the host needs no tools besides Docker.
 
 ### Configuration
 

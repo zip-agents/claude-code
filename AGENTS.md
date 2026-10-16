@@ -8,17 +8,22 @@ so status codes, problem `code`s, headers and log fields must match it exactly.
 ## Commands
 
 ```bash
-uv sync                                     # install runtime + dev dependencies (.venv)
-uv run python -m zip_service                # run locally on :8000 (.env is optional)
-uv run pytest                               # fast tests (default excludes `slow`)
-uv run pytest -m slow                       # integration tests: real server subprocess
-REQUIRE_ZIP_TOOLS=1 uv run pytest -m slow   # CI mode: unzip + 7z must be installed
-uv run ruff check . && uv run ruff format --check . && uv run mypy   # lint, format, types
-uv run ruff format . && uv run ruff check --fix .                    # auto-fix
-docker build -t zip-service:local . && ./scripts/smoke_test.sh zip-service:local
+make help                 # all targets; everything runs in containers (Docker or ENGINE=podman)
+make lock                 # after editing dependencies in pyproject.toml: rewrite uv.lock
+make run-dev              # run from source on $PORT from .env
+make test                 # fast tests (default excludes `slow`)
+make test-slow            # integration tests: real server subprocess, unzip + 7z required
+make lint                 # ruff check, ruff format --check, mypy --strict
+make format               # auto-format + safe fixes
+make check                # lint + all tests (CI gate)
+make smoke                # build the production image and smoke-test it
+make shell                # shell in the dev container (uv, unzip, 7z, curl available)
 ```
 
-After changing dependencies in `pyproject.toml`, run `uv lock` and commit `uv.lock`. CI
+Without Docker, the uv equivalents work directly: `uv sync`, `uv run pytest [-m slow]`,
+`uv run ruff check .`, `uv run mypy`.
+
+After changing dependencies in `pyproject.toml`, run `make lock` and commit `uv.lock`. CI
 uses `--locked` and fails on a stale lockfile.
 
 ## Architecture in one minute
@@ -82,10 +87,10 @@ true.
 
 ## Verifying a change
 
-1. `uv run ruff check . && uv run ruff format --check . && uv run mypy`
-2. `uv run pytest`, then `uv run pytest -m slow`. Any change to `pipeline.py`,
+1. `make lint`
+2. `make test`, then `make test-slow`. Any change to `pipeline.py`,
    `server.py`, `middleware.py` or `zipwriter.py` **must** pass the slow suite.
-3. Container-related changes: build the image and run `scripts/smoke_test.sh`.
+3. Container-related changes: `make smoke`.
 4. For behaviour changes, check the contract section first, then add a test at the lowest
    level that can express it. Use a pure unit test for rules. Use an integration test
    only for I/O behaviour: timing, sockets, process lifecycle.
