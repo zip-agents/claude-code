@@ -59,7 +59,9 @@ disallow_incomplete_defs = false
 # tests start (`patch = ["subprocess"]`). Run with COVERAGE_FILE set to an absolute path,
 # because that server runs in a temporary directory (see `make coverage`).
 source = ["."]
-omit = ["tests/*", ".venv/*"]
+# Leading `*`: relative patterns resolve against each process's working directory, and the
+# server subprocess runs in a temporary one.
+omit = ["*/tests/*", "*/.venv/*"]
 parallel = true
 patch = ["subprocess"]
 relative_files = true
