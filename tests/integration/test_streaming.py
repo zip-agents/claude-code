@@ -254,7 +254,7 @@ def test_health_stays_responsive_during_heavy_compression(
     uploader = threading.Thread(target=upload)
     uploader.start()
     time.sleep(0.5)
-    latencies = []
+    latencies: list[float] = []
     while uploader.is_alive() and len(latencies) < 40:
         started = time.monotonic()
         assert httpx.get(f"{server.url}/health/live", timeout=5).status_code == 200
