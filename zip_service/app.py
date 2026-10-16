@@ -4,6 +4,7 @@ from fastapi import FastAPI, Request, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.types import ASGIApp
 
+from zip_service.api.docs import DocsCatalog, docs_router
 from zip_service.api.health import health_router
 from zip_service.api.middleware import RequestContextMiddleware
 from zip_service.api.problems import ProblemError, problem_response
@@ -36,12 +37,18 @@ async def _internal_error_handler(request: Request, exc: Exception) -> Response:
     return problem_response("internal-error")
 
 
-def create_app(settings: Settings, tracker: InflightTracker | None = None) -> ASGIApp:
+def create_app(
+    settings: Settings,
+    tracker: InflightTracker | None = None,
+    docs: DocsCatalog | None = None,
+) -> ASGIApp:
     tracker = tracker or InflightTracker(settings.max_concurrent_requests)
+    docs = docs or DocsCatalog.load()
     api = FastAPI(title="zip-service", docs_url=None, redoc_url=None, openapi_url=None)
     api.add_exception_handler(ProblemError, _problem_error_handler)
     api.add_exception_handler(StarletteHTTPException, _http_error_handler)
     api.add_exception_handler(Exception, _internal_error_handler)
     api.include_router(health_router(tracker))
+    api.include_router(docs_router(docs))
     api.include_router(zip_router(settings, tracker))
     return RequestContextMiddleware(api)

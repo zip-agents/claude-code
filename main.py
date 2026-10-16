@@ -4,6 +4,7 @@ import sys
 
 import uvicorn
 
+from zip_service.api.docs import DocsCatalog, DocsError
 from zip_service.app import create_app
 from zip_service.config import ConfigError, load_settings
 from zip_service.server.lifecycle import InflightTracker
@@ -19,10 +20,16 @@ def main() -> int:
         print(exc, file=sys.stderr)
         return 2
 
+    try:
+        docs = DocsCatalog.load()
+    except DocsError as exc:
+        print(f"Invalid image: {exc}", file=sys.stderr)
+        return 2
+
     configure_logging(settings.log_level)
     tracker = InflightTracker(settings.max_concurrent_requests)
     config = uvicorn.Config(
-        create_app(settings, tracker),
+        create_app(settings, tracker, docs),
         host="0.0.0.0",
         port=settings.port,
         http=ClosableHttpToolsProtocol,

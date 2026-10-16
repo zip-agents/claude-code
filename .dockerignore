@@ -1,4 +1,5 @@
-# Only pyproject.toml, uv.lock, main.py and zip_service/ are needed to build the image.
+# Only pyproject.toml, uv.lock, main.py, zip_service/, README.md and AGENTS.md are needed
+# to build the image.
 .env
 .env.*
 .git
@@ -12,6 +13,9 @@
 tests
 scripts
 *.md
+# ...except the documents the service serves at /docs (contract §14).
+!README.md
+!AGENTS.md
 *.pdf
 Dockerfile
 .dockerignore

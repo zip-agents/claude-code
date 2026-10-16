@@ -4,6 +4,8 @@
 ENGINE    ?= docker
 IMAGE     ?= zip-service:local
 DEV_IMAGE ?= zip-service-dev
+# Reported in /docs/manifest.json (contract §14).
+GIT_SHA   ?= $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
 UID       := $(shell id -u)
 GID       := $(shell id -g)
 
@@ -60,10 +62,10 @@ coverage-diff: dev-image ## Changed lines vs COMPARE_BRANCH lacking coverage (af
 check: lint test-all ## Everything CI runs before building the image
 
 image: ## Build the production image
-	$(ENGINE) build -t $(IMAGE) .
+	$(ENGINE) build --build-arg GIT_SHA=$(GIT_SHA) -t $(IMAGE) .
 
 smoke: image dev-image ## Build the image and smoke-test it hardened
-	ENGINE=$(ENGINE) PROBE_IMAGE=$(DEV_IMAGE) ./scripts/smoke_test.sh $(IMAGE)
+	ENGINE=$(ENGINE) PROBE_IMAGE=$(DEV_IMAGE) EXPECTED_GIT_SHA=$(GIT_SHA) ./scripts/smoke_test.sh $(IMAGE)
 
 run: image ## Run the production image with settings from .env
 	$(ENGINE) run --rm -it --env-file .env -p $(PORT):$(PORT) --read-only --cap-drop ALL $(IMAGE)

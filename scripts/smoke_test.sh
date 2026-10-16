@@ -14,6 +14,7 @@ NAME="zip-smoke-$$"
 NAME_PORT="zip-smoke-port-$$"
 NAME_OFFLINE="zip-smoke-offline-$$"
 WORK="$(mktemp -d)"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 cleanup() {
   "$ENGINE" rm -f "$NAME" "$NAME_PORT" "$NAME_OFFLINE" >/dev/null 2>&1 || true
@@ -84,6 +85,26 @@ probe "$NAME" '
   grep -q "\"code\":\"unsupported-media-type\"" /work/problem.json
 ' || fail "problem responses"
 pass "errors are problem+json"
+
+probe "$NAME" '
+  base=http://127.0.0.1:8000/docs
+  curl -fsS -o /work/manifest.json "$base/manifest.json"
+  curl -fsS -D /work/readme.headers -o /work/README.md "$base/README.md"
+  curl -fsS -o /work/AGENTS.md "$base/AGENTS.md"
+  grep -qi "^content-type: text/markdown; charset=utf-8" /work/readme.headers
+  [ "$(curl -s -o /dev/null -w "%{http_code}" "$base/nope.md")" = 404 ]
+' || fail "docs endpoints"
+cmp -s "$WORK/README.md" "$ROOT/README.md" || fail "/docs/README.md differs from README.md"
+cmp -s "$WORK/AGENTS.md" "$ROOT/AGENTS.md" || fail "/docs/AGENTS.md differs from AGENTS.md"
+"$ENGINE" run --rm -v "$WORK:/work" -e EXPECTED_GIT_SHA "$PROBE_IMAGE" python3 -c '
+import json, os
+manifest = json.load(open("/work/manifest.json"))
+assert manifest["contract_version"] == "1.1.0", manifest
+assert [d["slug"] for d in manifest["documents"]][:2] == ["readme", "agents"], manifest
+expected = os.environ.get("EXPECTED_GIT_SHA")
+assert manifest["revision"] == (expected or manifest["revision"]), manifest
+' || fail "docs manifest"
+pass "docs endpoints serve README.md and AGENTS.md (contract §14)"
 
 "$ENGINE" logs "$NAME" 2>/dev/null | "$ENGINE" run --rm -i "$PROBE_IMAGE" python3 -c '
 import json, sys

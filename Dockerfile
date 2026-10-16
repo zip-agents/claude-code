@@ -26,12 +26,18 @@ COPY --from=build /app/.venv /app/.venv
 # Application code last, so code changes only rebuild this layer and the next.
 COPY main.py ./
 COPY zip_service ./zip_service
+# Served at /docs/*.md (contract §14); the service refuses to start without them.
+COPY README.md AGENTS.md ./
 # Compile bytecode now; never write it at runtime (read-only root fs).
 RUN python -m compileall -q zip_service
 ENV PATH="/app/.venv/bin:${PATH}" \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PORT=8000
+# The commit the image was built from, reported in /docs/manifest.json. Optional:
+# `docker build .` still works and reports "unknown". Last, as it changes every commit.
+ARG GIT_SHA=unknown
+ENV GIT_SHA=${GIT_SHA}
 USER 10001
 EXPOSE 8000
 HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
