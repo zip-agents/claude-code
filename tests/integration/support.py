@@ -225,9 +225,13 @@ class RawClient:
             if status >= 200:
                 return status, headers
 
-    def read_chunked(self, sink: Callable[[bytes], object] | None = None) -> ChunkedResult:
+    def read_chunked(
+        self, sink: Callable[[bytes], object] | None = None, stop_after: int | None = None
+    ) -> ChunkedResult:
+        """Read chunks to the end, or return early once `stop_after` body bytes have been
+        read; a later call continues where this one stopped."""
         total = 0
-        while True:
+        while stop_after is None or total < stop_after:
             size_line = self._read_line()
             if size_line is None:
                 return ChunkedResult(False, total)
@@ -241,6 +245,7 @@ class RawClient:
             total += size
             if sink:
                 sink(data)
+        return ChunkedResult(False, total)
 
     def read_sized(self, length: int) -> bytes:
         data = self._read_exact(length)

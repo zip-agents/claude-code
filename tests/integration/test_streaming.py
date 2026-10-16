@@ -91,6 +91,60 @@ def test_full_duplex_client_succeeds_far_beyond_buffer(
     assert record["files_count"] == 1
 
 
+def test_archive_bytes_arrive_before_upload_finishes(
+    server: ServerProcess, tmp_path: Path
+) -> None:
+    """End-to-end streaming: compressed bytes of a file reach the client while that same
+    file is still being uploaded, not after the upload completes."""
+    first_half = 8 * MIB
+    total = 16 * MIB
+    expect_early = 4 * MIB  # far more than headers; only file content can account for it
+    # Incompressible data, so DEFLATE cannot legitimately hold output back.
+    chunks = list(random_chunks(total, seed=8))
+    part = file_part("big.bin", chunks)
+    release_rest = threading.Event()
+    path = tmp_path / "early.zip"
+
+    with RawClient(server.port) as client:
+        def upload() -> None:
+            client.send_head(headers={"X-Request-ID": "early-bytes"})
+            client.send_chunk(part.head())
+            for chunk in chunks[: first_half // MIB]:
+                client.send_chunk(chunk)
+            # The upload stays unfinished (no closing boundary) until the test says so.
+            release_rest.wait(60)
+            for chunk in chunks[first_half // MIB :]:
+                client.send_chunk(chunk)
+            client.send_chunk(f"\r\n--{BOUNDARY}--\r\n".encode())
+            client.send_end()
+
+        sender = threading.Thread(target=upload)
+        sender.start()
+        client.sock.settimeout(15)
+        try:
+            status, headers = client.read_head()
+            with path.open("wb") as sink:
+                early = client.read_chunked(sink.write, stop_after=expect_early)
+                assert not release_rest.is_set(), "the upload must still be in progress"
+                assert early.size >= expect_early, (
+                    f"only {early.size} archive bytes arrived while the upload was in progress"
+                )
+                release_rest.set()
+                rest = client.read_chunked(sink.write)
+        except TimeoutError:
+            pytest.fail("no archive bytes arrived while the upload was still in progress")
+        finally:
+            release_rest.set()
+            sender.join()
+
+    assert status == 200
+    assert headers["content-type"] == "application/zip"
+    assert path.read_bytes()[:4] == b"PK\x03\x04"
+    assert rest.complete
+    assert _entry_sha256(path, "big.bin") == sha256_of(chunks)
+    assert server.completion_for("early-bytes")["outcome"] == "completed"
+
+
 def test_stalled_client_is_aborted_after_idle_timeout(make_server: ServerFactory) -> None:
     server = make_server(IDLE_TIMEOUT_SECONDS=2, OUTPUT_BUFFER_MAX_BYTES=256 * 1024)
     client = RawClient(server.port, timeout=30)
