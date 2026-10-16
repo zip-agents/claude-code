@@ -91,9 +91,7 @@ def test_full_duplex_client_succeeds_far_beyond_buffer(
     assert record["files_count"] == 1
 
 
-def test_archive_bytes_arrive_before_upload_finishes(
-    server: ServerProcess, tmp_path: Path
-) -> None:
+def test_archive_bytes_arrive_before_upload_finishes(server: ServerProcess, tmp_path: Path) -> None:
     """End-to-end streaming: compressed bytes of a file reach the client while that same
     file is still being uploaded, not after the upload completes."""
     first_half = 8 * MIB
@@ -106,6 +104,7 @@ def test_archive_bytes_arrive_before_upload_finishes(
     path = tmp_path / "early.zip"
 
     with RawClient(server.port) as client:
+
         def upload() -> None:
             client.send_head(headers={"X-Request-ID": "early-bytes"})
             client.send_chunk(part.head())

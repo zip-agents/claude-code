@@ -51,6 +51,8 @@ make test-slow           # slow: integration tests against a real server process
 make lint                # ruff check, ruff format --check, mypy --strict
 make format              # apply ruff formatting and safe fixes
 make check               # lint + all tests: what CI runs before building the image
+make coverage            # all tests under coverage: report + coverage.xml
+make coverage-diff       # lines changed since main that no test executes
 make test ARGS='-k names -x'   # pass extra pytest arguments
 ```
 
@@ -366,6 +368,25 @@ No-disk-writes is checked three ways: no regular file is held open for writing d
 `/proc/<pid>/io` `write_bytes` grows by less than 1 MiB. The container smoke test adds a
 read-only root filesystem.
 
+### Coverage
+
+Coverage is **informational: it never fails a build.** `make coverage` (and CI) runs every
+test under coverage.py, line coverage only (`COVERAGE_CORE=sysmon`, which keeps tracing
+overhead low on Python 3.12). That includes the server subprocesses the integration tests
+start (`[tool.coverage.run] patch = ["subprocess"]`), so the streaming and shutdown code
+counts.
+
+On pull requests, [diff-cover](https://github.com/Bachmann1234/diff_cover) compares the
+coverage data with the diff against the base branch. Every block of changed lines that no
+test executes becomes a warning annotation on the PR, and the job summary shows the total
+and the changed-line report. Locally, run `make coverage` then `make coverage-diff`
+(`COMPARE_BRANCH=origin/main` once there is a remote).
+
+The checks look at *new uncovered code* rather than comparing the total with `main`.
+Totals move for reasons that don't matter (deleted well-tested code lowers them), and a
+baseline comparison would need main's results stored between runs. Uncovered changed lines
+are what a reviewer can act on.
+
 ## CI/CD
 
 `.github/workflows/ci.yml` runs on every pull request and on pushes to `main` and `v*`
@@ -375,7 +396,7 @@ tags. Superseded PR runs are cancelled.
 |---|---|
 | `lint` | `ruff check`, `ruff format --check` and `mypy --strict`. Catches style drift and type errors in review instead of in production, so reviewers can focus on behaviour. `uv sync --locked` also fails if `uv.lock` is stale. |
 | `test-fast` | Unit and in-process tests, which give the quickest signal on rule changes. |
-| `test-slow` | Integration tests against a real server, with `unzip` and `7z` installed and **required**. This is where streaming, duplex, abort and shutdown regressions show up. |
+| `test-slow` | All tests (integration and unit) under coverage, against a real server, with `unzip` and `7z` installed and **required**. This is where streaming, duplex, abort and shutdown regressions show up. It adds the coverage report to the job summary, and on pull requests it adds warning annotations for changed lines no test executes. Coverage never fails the job. |
 | `image` | Runs after the three gates. Builds the image with BuildKit layer caching, then runs `scripts/smoke_test.sh` against it, so the Dockerfile is exercised on every PR. **On pushes to `main` and tags only**, it pushes to GHCR, tagged with the commit SHA, the branch, and the semver version for `v*` tags. |
 
 There is deliberately no deploy job: there is no target environment yet. Adding one means

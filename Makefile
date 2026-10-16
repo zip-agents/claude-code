@@ -15,11 +15,11 @@ TTY := $(shell [ -t 0 ] && echo -t)
 DEV_RUN = $(ENGINE) run --rm $(TTY) \
 	-v "$(CURDIR)":/workspace \
 	-v zip-service-dev:/opt/dev \
-	-e REQUIRE_ZIP_TOOLS=1 \
+	-e REQUIRE_ZIP_TOOLS=1 $(DEV_ENV) \
 	$(DEV_IMAGE)
 
 .DEFAULT_GOAL := help
-.PHONY: help dev-image lock format lint test test-slow test-all check image smoke run run-dev shell clean
+.PHONY: help dev-image lock format lint test test-slow test-all coverage coverage-diff check image smoke run run-dev shell clean
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -44,6 +44,19 @@ test-slow: dev-image ## Integration tests against a real server process
 
 test-all: test test-slow ## Fast and slow tests
 
+# Coverage data goes to an absolute path: the integration tests' server subprocess runs in a
+# temporary directory. sys.monitoring keeps tracing overhead low on Python 3.12.
+coverage: DEV_ENV = -e COVERAGE_FILE=/workspace/.coverage -e COVERAGE_CORE=sysmon
+coverage: dev-image ## All tests under coverage: report + coverage.xml (never fails on %)
+	$(DEV_RUN) sh -c 'rm -f .coverage .coverage.* coverage.xml; \
+		uv run --locked coverage run -m pytest -m "slow or not slow" $(ARGS); status=$$?; \
+		uv run --locked coverage combine -q && uv run --locked coverage report \
+		&& uv run --locked coverage xml -q; exit $$status'
+
+COMPARE_BRANCH ?= main
+coverage-diff: dev-image ## Changed lines vs COMPARE_BRANCH lacking coverage (after make coverage)
+	$(DEV_RUN) uv run --locked diff-cover coverage.xml --compare-branch=$(COMPARE_BRANCH)
+
 check: lint test-all ## Everything CI runs before building the image
 
 image: ## Build the production image
@@ -66,4 +79,4 @@ shell: dev-image ## Interactive shell in the dev container
 
 clean: ## Remove the dev volumes and local caches
 	-$(ENGINE) volume rm zip-service-dev zip-service-venv zip-service-uv-cache
-	rm -rf .mypy_cache .pytest_cache .ruff_cache
+	rm -rf .mypy_cache .pytest_cache .ruff_cache .coverage .coverage.* coverage.xml diff-cover.*

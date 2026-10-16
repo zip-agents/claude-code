@@ -17,3 +17,6 @@ Dockerfile
 .dockerignore
 Dockerfile.dev
 Makefile
+.coverage*
+coverage.xml
+diff-cover.*

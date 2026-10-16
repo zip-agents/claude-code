@@ -16,6 +16,8 @@ make test-slow            # integration tests: real server subprocess, unzip + 7
 make lint                 # ruff check, ruff format --check, mypy --strict
 make format               # auto-format + safe fixes
 make check                # lint + all tests (CI gate)
+make coverage             # all tests under coverage (informational, never fails)
+make coverage-diff        # changed lines vs main with no coverage (after make coverage)
 make smoke                # build the production image and smoke-test it
 make shell                # shell in the dev container (uv, unzip, 7z, curl available)
 ```

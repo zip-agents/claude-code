@@ -14,3 +14,9 @@ dist/
 .pytest_cache/
 .ruff_cache/
 .coverage
+
+# Coverage output
+.coverage
+.coverage.*
+coverage.xml
+diff-cover.*

@@ -1,5 +1,6 @@
 # syntax=docker/dockerfile:1
-# Development/test toolbox: Python, uv and the archive tools the tests validate with.
+# Development/test toolbox: Python, uv, git (for diff-cover) and the archive tools the
+# tests validate with.
 # The repository is bind-mounted at /workspace; the virtualenv and uv cache live in one
 # named volume at /opt/dev (as subdirectories: uv must be able to recreate the venv).
 # Build with the host UID/GID so files written to the mount stay yours.
@@ -12,7 +13,7 @@ FROM ${PYTHON_IMAGE}
 ARG UID=1000
 ARG GID=1000
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl unzip p7zip-full \
+    && apt-get install -y --no-install-recommends curl git unzip p7zip-full \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=uv /uv /uvx /usr/local/bin/
 RUN (getent group "${GID}" || groupadd --gid "${GID}" dev) \

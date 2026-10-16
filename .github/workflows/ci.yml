@@ -50,11 +50,17 @@ jobs:
       - run: uv run pytest
 
   test-slow:
-    name: Integration tests
+    name: Integration tests and coverage
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      # Absolute: the integration tests' server subprocess runs in a temporary directory.
+      COVERAGE_FILE: ${{ github.workspace }}/.coverage
+      COVERAGE_CORE: sysmon
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # diff-cover compares against the pull request's base branch
       - name: Install archive tools used to validate output
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends unzip p7zip-full
       - uses: astral-sh/setup-uv@v6
@@ -62,10 +68,50 @@ jobs:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
       - run: uv sync --locked
-      - name: Run integration tests (missing unzip/7z fails instead of skipping)
-        run: uv run pytest -m slow
+      - name: Run all tests under coverage (missing unzip/7z fails instead of skipping)
+        run: uv run coverage run -m pytest -m "slow or not slow"
         env:
           REQUIRE_ZIP_TOOLS: "1"
+      - name: Coverage report (informational)
+        continue-on-error: true
+        run: |
+          uv run coverage combine -q
+          uv run coverage xml -q
+          uv run coverage report
+          {
+            echo "### Coverage"
+            uv run coverage report --format=markdown
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Warn about changed lines without coverage
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        run: |
+          uv run diff-cover coverage.xml \
+            --compare-branch="origin/${{ github.base_ref }}" \
+            --format "markdown:diff-cover.md,json:diff-cover.json"
+          {
+            echo "### Coverage of changed lines"
+            cat diff-cover.md
+          } >> "$GITHUB_STEP_SUMMARY"
+          # One warning annotation per run of uncovered changed lines. Never fails the job.
+          uv run python - <<'PY'
+          import json
+
+          report = json.load(open("diff-cover.json"))
+          for path, stats in report["src_stats"].items():
+              lines = sorted(stats["violation_lines"])
+              start = previous = None
+              for line in [*lines, None]:
+                  if start is not None and line != previous + 1:
+                      print(
+                          f"::warning file={path},line={start},endLine={previous},"
+                          "title=Not covered by tests::Changed lines not executed by any test"
+                      )
+                      start = None
+                  if line is not None and start is None:
+                      start = line
+                  previous = line
+          PY
 
   image:
     name: Build, smoke-test and publish image
