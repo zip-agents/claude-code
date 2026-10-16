@@ -10,15 +10,39 @@ import asyncio
 import logging
 import socket
 from types import FrameType
+from typing import Any, cast
 
 import uvicorn
+from uvicorn.protocols.http.httptools_impl import HttpToolsProtocol
 
+from zip_service.context import CLOSE_CONNECTION_EXTENSION
 from zip_service.lifecycle import InflightTracker
 
 logger = logging.getLogger(__name__)
 
 # How long aborted requests get to unwind before uvicorn is told to exit regardless.
 _ABORT_SETTLE_SECONDS = 5.0
+
+
+class ClosableHttpToolsProtocol(HttpToolsProtocol):
+    """uvicorn's httptools protocol plus a way for the app to close the connection.
+
+    When an app returns mid-response, uvicorn calls `transport.close()`, which waits for
+    buffered output to flush. A client that is not reading never lets that happen, so the
+    connection would stay open forever. The extension closes gracefully when it can (the
+    client keeps the bytes already sent) and aborts the transport when it cannot.
+    """
+
+    def on_headers_complete(self) -> None:
+        super().on_headers_complete()
+        # The request task has been created but not started, so it sees this mutation.
+        scope = cast(dict[str, Any], self.scope)
+        scope.setdefault("extensions", {})[CLOSE_CONNECTION_EXTENSION] = self._close_connection
+
+    def _close_connection(self, grace_seconds: float) -> None:
+        transport = self.transport
+        transport.close()
+        self.loop.call_later(grace_seconds, transport.abort)
 
 
 class GracefulServer(uvicorn.Server):

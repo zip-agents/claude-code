@@ -25,7 +25,7 @@ from starlette.responses import Response
 from starlette.types import Message, Receive, Scope, Send
 
 from zip_service.config import Settings
-from zip_service.context import RequestStats
+from zip_service.context import CLOSE_CONNECTION_EXTENSION, RequestStats
 from zip_service.lifecycle import InflightTracker
 from zip_service.names import content_disposition
 from zip_service.problems import ProblemError, problem_response
@@ -36,6 +36,9 @@ logger = logging.getLogger(__name__)
 # Status recorded for a client that disconnects before any response was sent (nginx's
 # convention); nothing is actually sent.
 CLIENT_CLOSED_REQUEST = 499
+# After a mid-stream abort, output already handed to the server gets this long to flush
+# before the connection is forcibly reset (a client that is not reading never drains it).
+ABORT_FLUSH_GRACE_SECONDS = 1.0
 _MAX_WATCHDOG_TICK = 0.25
 
 
@@ -265,3 +268,6 @@ class ZipPipeline(Response):
                 await self._send_headers(send)
             except _ClientDisconnected:
                 stats.outcome = "client_disconnected"
+        close_connection = scope.get("extensions", {}).get(CLOSE_CONNECTION_EXTENSION)
+        if close_connection is not None:
+            close_connection(ABORT_FLUSH_GRACE_SECONDS)

@@ -8,6 +8,10 @@ Outcome = Literal["completed", "rejected", "aborted", "client_disconnected"]
 
 request_id_var: ContextVar[str | None] = ContextVar("request_id", default=None)
 
+# ASGI scope extension set by the server's protocol: a callable `close(grace_seconds)` that
+# closes the connection, forcibly if buffered output cannot be flushed within the grace.
+CLOSE_CONNECTION_EXTENSION = "zip_service.close_connection"
+
 
 @dataclass
 class RequestStats:

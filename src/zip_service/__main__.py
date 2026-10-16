@@ -8,7 +8,7 @@ from zip_service.app import create_app
 from zip_service.config import ConfigError, load_settings
 from zip_service.lifecycle import InflightTracker
 from zip_service.logs import configure_logging
-from zip_service.server import GracefulServer
+from zip_service.server import ClosableHttpToolsProtocol, GracefulServer
 
 
 def main() -> int:
@@ -25,7 +25,7 @@ def main() -> int:
         create_app(settings, tracker),
         host="0.0.0.0",
         port=settings.port,
-        http="httptools",
+        http=ClosableHttpToolsProtocol,
         loop="asyncio",
         lifespan="off",
         log_config=None,
