@@ -1,0 +1,17 @@
+# Only pyproject.toml, uv.lock and src/ are needed to build the image.
+.env
+.env.*
+.git
+.github
+.venv
+**/__pycache__
+**/*.py[cod]
+.mypy_cache
+.pytest_cache
+.ruff_cache
+tests
+scripts
+*.md
+*.pdf
+Dockerfile
+.dockerignore
