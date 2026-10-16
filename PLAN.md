@@ -114,3 +114,9 @@ docker build -t zip-service .
     locked virtualenv.
   - Deliberately not done: a separate domain error type and import-boundary enforcement.
     Not needed while this is only an API.
+- **Stdlib `zipfile` instead of a custom Zip64 writer** (agreed in review). The contract's
+  Zip64 requirement exists to remove the 4 GiB limit. `zipfile` meets that with
+  `force_zip64=True` on each entry (Zip64 local headers and data descriptors), plus Zip64
+  central-directory and end records when needed. A non-seekable sink makes it stream.
+  This removes about 170 lines of ZIP-format code that future maintainers would otherwise
+  have to understand.

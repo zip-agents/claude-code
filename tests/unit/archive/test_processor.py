@@ -1,5 +1,8 @@
+import gc
 import io
 import logging
+import struct
+import sys
 import zipfile
 from datetime import UTC, datetime
 
@@ -191,3 +194,49 @@ def test_streaming_starts_at_first_file_part() -> None:
     output = processor.feed(file_part("a.txt").head())
     assert processor.streaming
     assert output.startswith(b"PK\x03\x04")
+
+
+# --- archive format ---------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("level", [0, 1, 6, 9])
+def test_compression_levels_and_shared_timestamp(level: int) -> None:
+    payload = body([file_part("a.txt", b"hello " * 1000), file_part("empty.bin", b"")])
+    _, data = _run(payload, level=level)
+    archive = _zip(data)
+    expected_method = zipfile.ZIP_STORED if level == 0 else zipfile.ZIP_DEFLATED
+    for info in archive.infolist():
+        assert info.compress_type == expected_method
+        assert info.date_time == (2025, 1, 2, 3, 4, 6)
+        assert info.flag_bits & 0x0008  # streamed: sizes follow in a data descriptor
+    assert archive.read("a.txt") == b"hello " * 1000
+    assert archive.read("empty.bin") == b""
+
+
+def test_every_entry_reserves_64_bit_sizes() -> None:
+    # Sizes are unknown when an entry starts, so every local header carries a Zip64 extra
+    # (ID 0x0001) with its 32-bit size fields set to 0xFFFFFFFF.
+    _, data = _run(body([file_part("a.txt", b"abc"), file_part("b.txt", b"def")]))
+    for info in _zip(data).infolist():
+        offset = info.header_offset
+        assert struct.unpack_from("<I", data, offset) == (0x04034B50,)
+        compressed, size, name_len, _ = struct.unpack_from("<IIHH", data, offset + 18)
+        assert (compressed, size) == (0xFFFFFFFF, 0xFFFFFFFF)
+        assert struct.unpack_from("<HH", data, offset + 30 + name_len) == (0x0001, 16)
+
+
+def test_utf8_flag_only_for_non_ascii_names() -> None:
+    _, data = _run(body([file_part("plain.txt", b"1"), file_part("été.txt", b"2")]))
+    flags = {info.filename: info.flag_bits & 0x0800 for info in _zip(data).infolist()}
+    assert flags == {"plain.txt": 0, "été.txt": 0x0800}
+
+
+def test_abandoned_archive_is_not_finished_or_noisy(monkeypatch: pytest.MonkeyPatch) -> None:
+    unraisable: list[object] = []
+    monkeypatch.setattr(sys, "unraisablehook", unraisable.append)
+    processor = _processor()
+    output = processor.feed(body([file_part("a.txt", b"x" * 100)], close=False)[:-2])
+    assert output.startswith(b"PK\x03\x04")
+    del processor  # mid-entry, as after a mid-stream abort
+    gc.collect()
+    assert unraisable == []

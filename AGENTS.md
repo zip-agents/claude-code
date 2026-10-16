@@ -41,8 +41,7 @@ zip_service/api/            HTTP surface; route files mirror URLs
   middleware.py             outermost ASGI: request ID, last-resort 500, completion log line
   problems.py               ProblemError, PROBLEMS table (code → status/title/detail)
 zip_service/archive/        synchronous, no I/O
-  processor.py              ArchiveProcessor: multipart callbacks → zip bytes
-  zipwriter.py              ZipStreamWriter: Zip64 local headers, descriptors, central dir
+  processor.py              ArchiveProcessor: multipart callbacks → stdlib zipfile → bytes
   naming.py                 archive/entry name rules, de-duplication, Content-Disposition
   multipart.py              header parameter parsing (Content-Type, Content-Disposition)
 zip_service/server/         process runtime
@@ -90,9 +89,10 @@ true.
 10. **The concurrency slot is released exactly once** (in `ZipPipeline.__call__`'s
     `finally`, or in the route if the pipeline was never created). *Why:* a leak
     permanently shrinks capacity until the service answers only `503 overloaded`.
-11. **Every zip entry is Zip64 and the UTF-8 flag is set for non-ASCII names.** Validate
-    any writer change with `unzip -t` and `7z t` (slow tests), not just `zipfile`. *Why:*
-    §2.5. `zipfile` is lenient.
+11. **Every entry is opened with `force_zip64=True`** (sizes are unknown up front, and any
+    entry may exceed 4 GiB), and archives are only finished (`ZipFile.close()`) on success.
+    Validate any archive change with `unzip -t` and `7z t` (slow tests), not just
+    `zipfile`, which is lenient. *Why:* §2.5 and §6.2.
 12. **The image stays non-root, read-only-compatible and offline-capable.** Don't write
     to the filesystem at runtime, and don't fetch anything at startup. *Why:* §11.
 
@@ -100,7 +100,7 @@ true.
 
 1. `make lint`
 2. `make test`, then `make test-slow`. Any change under `api/` or
-   `server/`, or to `archive/zipwriter.py`, **must** pass the slow suite.
+   `server/`, or to the zip output in `archive/processor.py`, **must** pass the slow suite.
 3. Container-related changes: `make smoke`.
 4. For behaviour changes, check the contract section first, then add a test at the lowest
    level that can express it. Use a pure unit test for rules. Use an integration test

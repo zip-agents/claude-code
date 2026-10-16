@@ -5,10 +5,13 @@ produce. It is CPU-bound (multipart scanning, DEFLATE, CRC-32) and touches no I/
 the pipeline runs it in a worker thread, one call at a time per request.
 """
 
+import io
 import logging
+import zipfile
+from collections.abc import Buffer
 from datetime import datetime
 from enum import Enum, auto
-from typing import Any, cast
+from typing import IO, Any, cast
 
 from python_multipart.exceptions import MultipartParseError
 from python_multipart.multipart import MultipartParser
@@ -21,7 +24,6 @@ from zip_service.archive.naming import (
     archive_name,
     sanitize_entry_name,
 )
-from zip_service.archive.zipwriter import ZipStreamWriter
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +32,84 @@ ARCHIVE_NAME_FIELD = "filename"
 MAX_ARCHIVE_NAME_FIELD_BYTES = 1024
 # Part headers are buffered in memory, so they need a cap of their own.
 MAX_PART_HEADER_BYTES = 16 * 1024
+_UNIX_FILE_MODE = 0o100644
+
+
+class _Sink(io.RawIOBase):
+    """A non-seekable file that collects what zipfile writes, to be handed to the response.
+
+    Being non-seekable makes zipfile stream: it writes sizes and CRCs in a data descriptor
+    after each entry instead of seeking back to the local header.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._chunks: list[bytes] = []
+
+    def writable(self) -> bool:
+        return True
+
+    def write(self, data: Buffer) -> int:
+        view = memoryview(data)
+        self._chunks.append(view.tobytes())
+        return view.nbytes
+
+    def take(self) -> bytes:
+        output = b"".join(self._chunks)
+        self._chunks.clear()
+        return output
+
+
+class _StreamingZipFile(zipfile.ZipFile):
+    def __del__(self) -> None:
+        # ZipFile.__del__ calls close(), which would finish an archive that was abandoned
+        # mid-stream (or complain about the open entry). Aborted archives stay truncated.
+        pass
+
+
+class _ZipOutput:
+    """Stdlib zipfile driven incrementally: each call returns the zip bytes to send next."""
+
+    def __init__(self, compression_level: int, modified: datetime) -> None:
+        self._sink = _Sink()
+        self._level = compression_level
+        self._method = zipfile.ZIP_DEFLATED if compression_level > 0 else zipfile.ZIP_STORED
+        self._date_time = (
+            modified.year,
+            modified.month,
+            modified.day,
+            modified.hour,
+            modified.minute,
+            modified.second,
+        )
+        self._zip = _StreamingZipFile(cast(IO[bytes], self._sink), "w", self._method)
+        self._entry: IO[bytes] | None = None
+
+    def start_entry(self, name: str) -> bytes:
+        info = zipfile.ZipInfo(name, date_time=self._date_time)
+        info.compress_type = self._method
+        info.external_attr = _UNIX_FILE_MODE << 16
+        # ZipFile.open() ignores the archive-wide level when given a ZipInfo.
+        info._compresslevel = self._level  # type: ignore[attr-defined, unused-ignore]
+        # Sizes are unknown until the part ends, so always reserve 64-bit fields: any entry
+        # may exceed 4 GiB. zipfile adds Zip64 central-directory records when needed.
+        self._entry = self._zip.open(info, "w", force_zip64=True)
+        return self._sink.take()
+
+    def write(self, data: bytes) -> bytes:
+        assert self._entry is not None
+        self._entry.write(data)
+        return self._sink.take()
+
+    def end_entry(self) -> bytes:
+        assert self._entry is not None
+        self._entry.close()
+        self._entry = None
+        return self._sink.take()
+
+    def finish(self) -> bytes:
+        self._zip.close()  # central directory and end records
+        return self._sink.take()
 
 
 class _Mode(Enum):
@@ -50,7 +130,7 @@ class ArchiveProcessor:
         self, boundary: bytes, *, max_files: int, compression_level: int, modified: datetime
     ) -> None:
         self._max_files = max_files
-        self._zip = ZipStreamWriter(compression_level, modified)
+        self._zip = _ZipOutput(compression_level, modified)
         self._names = EntryNameDeduplicator()
         self._out: list[bytes] = []
         self._mode = _Mode.DISCARD

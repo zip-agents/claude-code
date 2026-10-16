@@ -137,10 +137,10 @@ zip_service/
     middleware.py          request IDs, last-resort 500, one completion log line
     problems.py            problem+json responses and the code → status table
   archive/                 synchronous, no I/O
-    processor.py           multipart bytes → zip bytes, enforces the part rules (§2.2)
+    processor.py           multipart bytes → zip bytes (via stdlib zipfile), enforces the
+                           part rules (§2.2)
     multipart.py           header-parameter parsing (Content-Type, Content-Disposition)
     naming.py              archive/entry name rules, de-duplication, Content-Disposition
-    zipwriter.py           push-based Zip64 writer: each call returns the bytes to emit
   server/                  the process
     server.py              GracefulServer (SIGTERM drain), ClosableHttpToolsProtocol
     lifecycle.py           concurrency counter, shutdown flag
@@ -252,7 +252,7 @@ its access log is disabled. Each `POST /api/v1/zip` emits exactly one completion
 |---|---|
 | FastAPI + uvicorn (httptools) | FastAPI is required by the brief. uvicorn supports reading the body and writing the response concurrently, which duplex streaming needs, and applies transport-level flow control. |
 | python-multipart (low-level `MultipartParser`) | An incremental, callback-based parser that is already FastAPI's dependency and widely used. Its high-level form parser spools files to disk, so it is not used. |
-| Own Zip64 writer (~170 lines) | The contract needs Zip64 on *every* entry, the UTF-8 flag, data descriptors and a push model. Stdlib `zipfile` only adds central-directory Zip64 when sizes require it and is built around a file object. `stream-zip` is pull-based (generators), which is awkward to drive from async input. The format part is small and is checked against `zipfile`, `unzip` and `7z`. |
+| Stdlib `zipfile` for the archive format | Driven incrementally through a small non-seekable sink: each `write()` returns the zip bytes produced so far, which fits the push model (bytes arrive from the socket). A non-seekable output makes it stream with data descriptors. `force_zip64=True` on every entry reserves 64-bit sizes, because sizes are unknown up front, and zipfile writes Zip64 central-directory and end records when a value needs them. No dependency, maintained by CPython, familiar to every Python developer. `stream-zip` and `zipstream-ng` are pull-based (they iterate generators), which would need a thread and queues to bridge from the parser callbacks. |
 | Own header-parameter parsing | python-multipart doesn't decode `filename*` and rewrites some backslash paths. |
 | pydantic-settings | Typed validation, `.env` support and env-over-dotenv precedence, with no custom code. |
 | uv | One tool for Python versions, locking and running. `uv.lock` makes local, CI and image builds use the same dependencies. |
@@ -268,7 +268,7 @@ Per in-flight zip request:
 | zlib compressor state | ~270 KiB at the default `memLevel` |
 | uvicorn read-ahead before pausing the socket | ~64–256 KiB |
 | Multipart parser, part headers (capped at 16 KiB), `filename` field (≤ 1 KiB) | < 50 KiB |
-| Central directory kept until the end | ~300 bytes × `MAX_FILES` (≈ 150 KiB at 500) |
+| Central directory kept until the end (one `ZipInfo` per entry) | ~1 KiB × `MAX_FILES` (≈ 0.5 MiB at 500) |
 | Asyncio transport write buffer | ≤ 64 KiB + one chunk |
 
 So, per instance:
@@ -277,10 +277,10 @@ So, per instance:
 RSS ≈ B + MAX_CONCURRENT_REQUESTS × (OUTPUT_BUFFER_MAX_BYTES + C)
 
 B ≈ 60 MiB   interpreter, FastAPI/uvicorn, worker thread stacks
-C ≈ 1 MiB    the per-request overhead above (with headroom)
+C ≈ 1.5 MiB  the per-request overhead above (with headroom)
 ```
 
-With the defaults that is 60 MiB + 32 × 17 MiB ≈ **600 MiB**, so a container memory limit
+With the defaults that is 60 MiB + 32 × 17.5 MiB ≈ **620 MiB**, so a container memory limit
 of about 768 MiB leaves headroom. The integration test `test_memory_stays_bounded...` streams
 256 MiB of incompressible data (set `MEMORY_TEST_UPLOAD_MIB` to go larger) with a 4 MiB
 buffer. It pauses the reader so the buffer fills completely, and asserts that RSS grows by
@@ -317,6 +317,10 @@ less than the buffer plus 40 MiB.
   ` (n)` would push a name past 255 bytes, the stem is truncated further.
 - **Timestamps.** DOS timestamps have no time zone and 2-second resolution; the UTC wall
   time is stored. No extended-timestamp extra field is written.
+- **Zip64 ("every entry MUST be written with Zip64 extensions")** is read as its purpose:
+  no 4 GiB limit. Every entry reserves 64-bit sizes (Zip64 local-header extra and data
+  descriptor). The central directory and end records use Zip64 only when a value exceeds
+  the 32-bit limit, which is stdlib `zipfile`'s behaviour and what readers rely on.
 - **STORED entries (level 0)** still use data descriptors. Central-directory readers
   (unzip, 7z, zipfile, OS archive tools) handle this. Strict streaming readers such as
   Java's `ZipInputStream` don't support STORED with data descriptors.
@@ -347,14 +351,15 @@ less than the buffer plus 40 MiB.
 
 | Suite | Command | What it covers |
 |---|---|---|
-| Fast | `uv run pytest` | Name rules, sanitisation and de-duplication, `Content-Disposition`, header parsing, configuration validation, the Zip64 writer (round-tripped through `zipfile`, extras and flags inspected), the processor fed in many chunkings (1 byte to whole body) including every error, output-buffer backpressure, and in-process routing and error handling (`TestClient`). |
+| Fast | `uv run pytest` | Name rules, sanitisation and de-duplication, `Content-Disposition`, header parsing, configuration validation, the processor (archives round-tripped through `zipfile`, Zip64 local headers, UTF-8 flags and compression methods inspected) fed in many chunkings (1 byte to whole body) including every error, output-buffer backpressure, and in-process routing and error handling (`TestClient`). |
 | Slow | `uv run pytest -m slow` | A real `python main.py` subprocess, driven by `httpx` and a raw-socket HTTP/1.1 client. Covers archive validity with `zipfile`, `unzip -t` and `7z t` with contents compared byte for byte, bounded RSS during a large upload, no disk writes, half-duplex success, full-duplex success at 128× the buffer, stalled clients aborted, every reachable §6.1 code, mid-stream truncation without the terminating chunk, disconnects releasing the concurrency slot, `503 overloaded`, health latency under load, and SIGTERM draining and aborting. |
 | Container | `scripts/smoke_test.sh` | The built image, hardened (see above). |
 
 **Archive tools tested against:** Python `zipfile` (3.12), Info-ZIP UnZip 6.00 and the
-`7z` from the `unzip` and `p7zip-full` packages on Ubuntu 24.04 (CI). Archives use Zip64 for every
-entry. Very old tools without Zip64 support (UnZip < 6.0, Windows XP's built-in
-extractor) can't read them.
+`7z` from the `unzip` and `p7zip-full` packages on Ubuntu 24.04 (CI). Every entry reserves 64-bit sizes
+(a Zip64 extra in its local header and a Zip64 data descriptor). The central directory
+and end records switch to Zip64 when an entry or the archive exceeds 4 GiB. Very old tools
+without Zip64 support (UnZip < 6.0, Windows XP's built-in extractor) can't read those.
 
 No-disk-writes is checked three ways: no regular file is held open for writing during a
 128 MiB upload, the server's working directory (also its `TMPDIR`) stays empty, and
