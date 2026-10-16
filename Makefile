@@ -14,8 +14,7 @@ PORT ?= 8000
 TTY := $(shell [ -t 0 ] && echo -t)
 DEV_RUN = $(ENGINE) run --rm $(TTY) \
 	-v "$(CURDIR)":/workspace \
-	-v zip-service-venv:/venv \
-	-v zip-service-uv-cache:/cache \
+	-v zip-service-dev:/opt/dev \
 	-e REQUIRE_ZIP_TOOLS=1 \
 	$(DEV_IMAGE)
 
@@ -57,14 +56,14 @@ run: image ## Run the production image with settings from .env
 	$(ENGINE) run --rm -it --env-file .env -p $(PORT):$(PORT) --read-only --cap-drop ALL $(IMAGE)
 
 run-dev: dev-image ## Run the service from source with settings from .env
-	$(ENGINE) run --rm -it -v "$(CURDIR)":/workspace -v zip-service-venv:/venv \
-		-v zip-service-uv-cache:/cache --env-file .env -p $(PORT):$(PORT) \
+	$(ENGINE) run --rm -it -v "$(CURDIR)":/workspace -v zip-service-dev:/opt/dev \
+		--env-file .env -p $(PORT):$(PORT) \
 		$(DEV_IMAGE) uv run --locked python -m zip_service
 
 shell: dev-image ## Interactive shell in the dev container
-	$(ENGINE) run --rm -it -v "$(CURDIR)":/workspace -v zip-service-venv:/venv \
-		-v zip-service-uv-cache:/cache $(DEV_IMAGE) bash
+	$(ENGINE) run --rm -it -v "$(CURDIR)":/workspace -v zip-service-dev:/opt/dev \
+		$(DEV_IMAGE) bash
 
 clean: ## Remove the dev volumes and local caches
-	-$(ENGINE) volume rm zip-service-venv zip-service-uv-cache
+	-$(ENGINE) volume rm zip-service-dev zip-service-venv zip-service-uv-cache
 	rm -rf .mypy_cache .pytest_cache .ruff_cache

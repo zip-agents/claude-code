@@ -1,7 +1,8 @@
 # syntax=docker/dockerfile:1
 # Development/test toolbox: Python, uv and the archive tools the tests validate with.
-# The repository is bind-mounted at /workspace; the virtualenv and uv cache live in named
-# volumes. Build with the host UID/GID so files written to the mount stay yours.
+# The repository is bind-mounted at /workspace; the virtualenv and uv cache live in one
+# named volume at /opt/dev (as subdirectories: uv must be able to recreate the venv).
+# Build with the host UID/GID so files written to the mount stay yours.
 ARG PYTHON_IMAGE=python:3.12.8-slim-bookworm
 ARG UV_IMAGE=ghcr.io/astral-sh/uv:0.8.0
 
@@ -16,13 +17,13 @@ RUN apt-get update \
 COPY --from=uv /uv /uvx /usr/local/bin/
 RUN (getent group "${GID}" || groupadd --gid "${GID}" dev) \
     && useradd --create-home --uid "${UID}" --gid "${GID}" --shell /bin/bash dev \
-    && mkdir -p /venv /cache \
-    && chown "${UID}:${GID}" /venv /cache
-ENV UV_PROJECT_ENVIRONMENT=/venv \
-    UV_CACHE_DIR=/cache \
+    && mkdir -p /opt/dev \
+    && chown "${UID}:${GID}" /opt/dev
+ENV UV_PROJECT_ENVIRONMENT=/opt/dev/venv \
+    UV_CACHE_DIR=/opt/dev/cache \
     UV_LINK_MODE=copy \
     UV_PYTHON_DOWNLOADS=never \
     PYTHONDONTWRITEBYTECODE=1 \
-    PATH="/venv/bin:${PATH}"
+    PATH="/opt/dev/venv/bin:${PATH}"
 USER ${UID}:${GID}
 WORKDIR /workspace
