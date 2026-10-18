@@ -27,6 +27,9 @@ def test_every_listed_document_is_served_byte_for_byte(make_server: ServerFactor
         expected = (PROJECT_ROOT / Path(document["path"]).name).read_bytes()
         assert response.content == expected
 
+    spec = httpx.get(f"{server.url}{manifest['openapi']}", timeout=10).json()
+    assert "/api/v1/zip" in spec["paths"]
+
     missing = httpx.get(f"{server.url}/docs/missing.md", timeout=10)
     assert missing.status_code == 404
     assert missing.json()["code"] == "not-found"

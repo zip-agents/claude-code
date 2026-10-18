@@ -91,6 +91,7 @@ probe "$NAME" '
   curl -fsS -o /work/manifest.json "$base/manifest.json"
   curl -fsS -D /work/readme.headers -o /work/README.md "$base/README.md"
   curl -fsS -o /work/AGENTS.md "$base/AGENTS.md"
+  curl -fsS -o /work/openapi.json "$base/openapi.json"
   grep -qi "^content-type: text/markdown; charset=utf-8" /work/readme.headers
   [ "$(curl -s -o /dev/null -w "%{http_code}" "$base/nope.md")" = 404 ]
 ' || fail "docs endpoints"
@@ -101,10 +102,12 @@ import json, os
 manifest = json.load(open("/work/manifest.json"))
 assert manifest["contract_version"] == "1.1.0", manifest
 assert [d["slug"] for d in manifest["documents"]][:2] == ["readme", "agents"], manifest
+spec = json.load(open("/work/openapi.json"))
+assert manifest["openapi"] == "/docs/openapi.json" and "/api/v1/zip" in spec["paths"], spec
 expected = os.environ.get("EXPECTED_GIT_SHA")
 assert manifest["revision"] == (expected or manifest["revision"]), manifest
 ' || fail "docs manifest"
-pass "docs endpoints serve README.md and AGENTS.md (contract §14)"
+pass "docs endpoints serve README.md, AGENTS.md and the OpenAPI document (contract §14)"
 
 "$ENGINE" logs "$NAME" 2>/dev/null | "$ENGINE" run --rm -i "$PROBE_IMAGE" python3 -c '
 import json, sys

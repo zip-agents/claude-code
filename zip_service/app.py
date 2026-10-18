@@ -7,6 +7,7 @@ from starlette.types import ASGIApp
 from zip_service.api.docs import DocsCatalog, docs_router
 from zip_service.api.health import health_router
 from zip_service.api.middleware import RequestContextMiddleware
+from zip_service.api.openapi import OPENAPI_PATH, install_openapi
 from zip_service.api.problems import ProblemError, problem_response
 from zip_service.api.v1.zip import zip_router
 from zip_service.config import Settings
@@ -44,7 +45,10 @@ def create_app(
 ) -> ASGIApp:
     tracker = tracker or InflightTracker(settings.max_concurrent_requests)
     docs = docs or DocsCatalog.load()
-    api = FastAPI(title="zip-service", docs_url=None, redoc_url=None, openapi_url=None)
+    # The OpenAPI document is served under /docs (contract §14); FastAPI's own UI pages
+    # stay off, the API gateway renders the document.
+    api = FastAPI(docs_url=None, redoc_url=None, openapi_url=OPENAPI_PATH)
+    install_openapi(api)
     api.add_exception_handler(ProblemError, _problem_error_handler)
     api.add_exception_handler(StarletteHTTPException, _http_error_handler)
     api.add_exception_handler(Exception, _internal_error_handler)

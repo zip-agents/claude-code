@@ -39,6 +39,8 @@ zip_service/api/            HTTP surface; route files mirror URLs
   health.py                 /health/live, /health/ready
   docs.py                   /docs/manifest.json, /docs/*.md (contract §14): fixed allow-list,
                             loaded at startup by main.py, served from memory
+  openapi.py                the generated OpenAPI document (/docs/openapi.json): models,
+                            the zip request body, error responses from PROBLEMS
   v1/zip.py                 POST /api/v1/zip: shutdown/overload/content-type checks, slot
   streaming.py              ZipPipeline (an ASGI Response): reader / writer / watchdog tasks
                             around a bounded OutputBuffer; problem response vs abort
@@ -134,6 +136,10 @@ true.
 - `README.md` and `AGENTS.md` are published through `/docs` to the gateway's portal.
   Keep them accurate when behaviour changes. Use plain Markdown (no raw HTML), and refer
   to other documents by name rather than by relative link.
+- OpenAPI: give every route `tags` and a `summary`. Describe anything FastAPI cannot infer
+  (raw-stream bodies, non-JSON responses) in `api/openapi.py`, and document errors with
+  `problem_responses(...)` rather than by hand. `tests/unit/api/test_docs.py` checks the
+  document.
 - Version: bump `version` in `pyproject.toml` and `zip_service.__version__` together (a
   test checks they match), then `make lock`.
 - Commits: small, one logical change each, imperative subject line, tests passing.

@@ -113,8 +113,8 @@ carries `Content-Disposition` (an ASCII fallback plus an RFC 8187 `filename*`),
 returns 200, or 503 while the service is shutting down. Health endpoints don't count
 toward the concurrency limit.
 
-`GET /docs/manifest.json` and `GET /docs/README.md` and `/docs/AGENTS.md` serve this
-service's own documentation (contract 1.1.0 §14), so that the API gateway can publish it
+`GET /docs/manifest.json`, `GET /docs/README.md`, `/docs/AGENTS.md` and
+`/docs/openapi.json` serve this service's own documentation (contract 1.1.0 §14), so that the API gateway can publish it
 in its docs portal. The manifest reports the service version, the git commit the image was
 built from (`revision`) and the contract version. Like health checks, these endpoints
 don't count toward the concurrency limit. Because of this, this README is also read in
@@ -350,9 +350,14 @@ less than the buffer plus 40 MiB.
   the connection is reset.
 - **Unknown HTTP errors** from the framework (none are known to occur) keep their status
   and use the `internal-error` problem body.
-- **FastAPI's `/docs` UI, `/redoc` and `/openapi.json` stay disabled.** `/docs/*` is
-  contract §14 instead. The API gateway hosts the API reference, and a generated
-  OpenAPI document would say little, because the zip route reads the raw request stream.
+- **The OpenAPI document is generated from the code** and served at `/docs/openapi.json`
+  (listed in the manifest); FastAPI's `/docs` UI, `/redoc` and `/openapi.json` stay off,
+  because the API gateway renders the document. FastAPI cannot infer the zip request
+  body (the route reads the raw stream), so `api/openapi.py` describes it next to the
+  code, and every error response is generated from the `PROBLEMS` table. The document
+  describes the service as reached directly: no servers and no authentication; the
+  gateway adds both. `413 too-many-files` is not documented, because it is never sent
+  (see the first bullet).
 - **Docs are loaded once, at startup,** from a fixed allow-list (`DOCUMENTS` in
   `api/docs.py`) and served from memory. A missing or oversized document makes the
   process exit with status 2, like invalid configuration, so a broken image never

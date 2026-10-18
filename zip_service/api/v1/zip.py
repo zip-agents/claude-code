@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Request, Response
 
+from zip_service.api.openapi import zip_operation
 from zip_service.api.problems import ProblemError
 from zip_service.api.streaming import ZipPipeline
 from zip_service.archive.multipart import ContentTypeError, multipart_boundary
@@ -17,7 +18,14 @@ ZIP_PATH = "/api/v1/zip"
 def zip_router(settings: Settings, tracker: InflightTracker) -> APIRouter:
     router = APIRouter()
 
-    @router.post(ZIP_PATH)
+    @router.post(
+        ZIP_PATH,
+        tags=["zip"],
+        summary="Zip uploaded files",
+        # A plain Response: the archive is streamed, never a JSON body.
+        response_class=Response,
+        openapi_extra=zip_operation(settings),
+    )
     async def create_zip(request: Request) -> Response:
         received_at = datetime.now(UTC)
         if tracker.shutting_down:
