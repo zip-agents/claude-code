@@ -24,3 +24,5 @@ Makefile
 .coverage*
 coverage.xml
 diff-cover.*
+deploy
+.terraform

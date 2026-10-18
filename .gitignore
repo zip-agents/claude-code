@@ -20,3 +20,12 @@ dist/
 .coverage.*
 coverage.xml
 diff-cover.*
+
+# Terraform working files (deploy/); state lives in S3
+.terraform/
+*.tfplan
+*_override.tf
+
+# Exercise working files, never committed
+Senior Backend Engineer — Take-Home Exercise.pdf
+PROMPT.md

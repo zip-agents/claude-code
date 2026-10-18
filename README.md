@@ -424,8 +424,28 @@ tags. Superseded PR runs are cancelled.
 | `test-slow` | All tests (integration and unit) under coverage, against a real server, with `unzip` and `7z` installed and **required**. This is where streaming, duplex, abort and shutdown regressions show up. It adds the coverage report to the job summary, and on pull requests it adds warning annotations for changed lines no test executes. Coverage never fails the job. |
 | `image` | Runs after the three gates. Builds the image with BuildKit layer caching, then runs `scripts/smoke_test.sh` against it, so the Dockerfile is exercised on every PR. **On pushes to `main` and tags only**, it pushes to GHCR, tagged with the commit SHA, the branch, and the semver version for `v*` tags. |
 
-There is deliberately no deploy job: there is no target environment yet. Adding one means
-a job gated on a protected GitHub environment that deploys the SHA-tagged image.
+### Deployment
+
+`.github/workflows/deploy.yml` deploys this service to AWS on its own, onto the shared
+platform defined in the platform repository, zip-agents/api-gateway (ECS Fargate behind
+the API gateway):
+
+- **Pull requests touching `deploy/`:** `terraform plan` with a read-only role, in the
+  job summary.
+- **After CI succeeds on `main`:**
+  1. build the image with `GIT_SHA`, push it to ECR tagged with the commit
+  2. `terraform apply` of `deploy/` (the platform's `ecs-service` module, pinned to a
+     release tag), which waits until the new task is healthy; the circuit breaker rolls
+     back a deploy that never becomes healthy
+  3. a post-deploy check through the gateway: health, the contract example, and the
+     manifest's `revision` matching the commit
+- **Manual run:** redeploys `main`.
+
+The service runs on Fargate Spot, 0.25 vCPU and 1 GiB (the memory budget above), in
+private subnets. It is registered in Cloud Map as `claude.zip.internal`, and only the
+gateway can reach it. Credentials come from GitHub OIDC, with a role that can only touch
+this service's resources. There is no autoscaling: the platform caps costs.
+
 `.github/dependabot.yml` opens weekly update PRs for uv dependencies, GitHub Actions and
 the Docker base images, and these go through the same gates.
 

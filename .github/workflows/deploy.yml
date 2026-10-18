@@ -1,0 +1,129 @@
+# Deploy this service to the shared platform, independently of every other service.
+#
+#   pull request touching deploy/  terraform plan (read-only role), shown in the job summary
+#   CI succeeded on main           build the image, push it to ECR, terraform apply, check
+#   manual run                     redeploy the current main (e.g. after `make aws-down`)
+#
+# Needs repository variables AWS_ACCOUNT_ID, AWS_REGION and DOMAIN_NAME, the secret
+# SMOKE_API_KEY, and an environment named `prod`.
+name: deploy
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  pull_request:
+    paths: ["deploy/**", ".github/workflows/deploy.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  SERVICE: claude
+  TF_VERSION: "1.16.3"
+  TF_IN_AUTOMATION: "1"
+
+jobs:
+  plan:
+    name: Plan
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/zip-platform-${{ env.SERVICE }}-plan
+          aws-region: ${{ vars.AWS_REGION }}
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+      - name: Plan (read-only role, so no state lock)
+        env:
+          TF_VAR_region: ${{ vars.AWS_REGION }}
+          TF_VAR_image_tag: ${{ github.event.pull_request.head.sha }}
+        run: |
+          terraform -chdir=deploy init -input=false \
+            -backend-config="bucket=zip-platform-tfstate-${{ vars.AWS_ACCOUNT_ID }}-${{ vars.AWS_REGION }}" \
+            -backend-config="region=${{ vars.AWS_REGION }}"
+          terraform -chdir=deploy plan -input=false -lock=false -no-color | tee plan.txt
+          { echo "### $SERVICE plan"; echo '```'; tail -c 60000 plan.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    name: Deploy
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment:
+      name: prod
+      url: https://${{ vars.DOMAIN_NAME }}/docs
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.SHA }}
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/zip-platform-${{ env.SERVICE }}-deploy
+          aws-region: ${{ vars.AWS_REGION }}
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      - name: Build and push the image (tags are immutable; an existing tag is reused)
+        env:
+          IMAGE: ${{ steps.ecr.outputs.registry }}/zip-platform/${{ env.SERVICE }}:${{ env.SHA }}
+        run: |
+          if aws ecr describe-images --repository-name "zip-platform/$SERVICE" \
+               --image-ids imageTag="$SHA" >/dev/null 2>&1; then
+            echo "$IMAGE already pushed"
+          else
+            docker build --build-arg GIT_SHA="$SHA" -t "$IMAGE" .
+            docker push "$IMAGE"
+          fi
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+      - name: Apply (waits until the new tasks are healthy; rolls back if they never are)
+        env:
+          TF_VAR_region: ${{ vars.AWS_REGION }}
+          TF_VAR_image_tag: ${{ env.SHA }}
+        run: |
+          terraform -chdir=deploy init -input=false \
+            -backend-config="bucket=zip-platform-tfstate-${{ vars.AWS_ACCOUNT_ID }}-${{ vars.AWS_REGION }}" \
+            -backend-config="region=${{ vars.AWS_REGION }}"
+          terraform -chdir=deploy apply -input=false -auto-approve
+      - name: Post-deploy check through the gateway
+        env:
+          BASE: https://${{ vars.DOMAIN_NAME }}/claude
+          API_KEY: ${{ secrets.SMOKE_API_KEY }}
+        run: |
+          auth=(-H "Authorization: Bearer $API_KEY")
+          curl -fsS --retry 10 --retry-delay 6 --retry-all-errors "${auth[@]}" "$BASE/health/ready"
+          echo
+          # The contract example, end to end: a valid archive with de-duplicated names.
+          printf 'hello\n' > a.txt
+          curl -fsS -o out.zip "${auth[@]}" -F 'filename=deploy check' \
+            -F 'files=@a.txt' -F 'files=@a.txt' "$BASE/api/v1/zip"
+          unzip -t out.zip
+          test "$(unzip -Z1 out.zip | tr '\n' '|')" = 'a.txt|a (1).txt|'
+          # The deployed build is this commit.
+          curl -fsS "${auth[@]}" "$BASE/docs/manifest.json" |
+            python3 -c 'import json, os, sys; assert json.load(sys.stdin)["revision"] == os.environ["SHA"]'
